@@ -37,6 +37,11 @@ from abstractdriver import *
 ## LSDDriver
 ## ==============================================
 class LsdDriver(AbstractDriver):
+    DEFAULT_CONFIG = {
+        'clients': ('client hosts', 'node1 node2'),
+        'path': ('path to pytpcc code on client nodes', '/home/ubuntu/lsd/bench/tpcc/pytpcc'),
+    }
+
     def __init__(self, ddl):
         super(LsdDriver, self).__init__('lsd', ddl)
         self.name = 'lsd'
@@ -47,11 +52,11 @@ class LsdDriver(AbstractDriver):
             It should return the items that need to be in your implementation's configuration file.
             Each item in the list is a triplet containing: ( <PARAMETER NAME>, <DESCRIPTION>, <DEFAULT VALUE> )
         """
-        return []
+        return LsdDriver.DEFAULT_CONFIG
 
     def loadConfig(self, config):
         """Initialize the driver using the given configuration dict"""
-        self.use_lsd = config['use_lsd'] == 'yes'
+        pass
 
     def loadStart(self):
         """Optional callback to indicate to the driver that the data loading phase is about to begin."""
