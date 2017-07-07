@@ -27,7 +27,7 @@
 import logging
 from datetime import datetime
 import tpcc_pb2
-import google.protobuf.text_format
+import google.protobuf.text_format as pb
 from pymemcache.client.base import Client as memcached
 import uuid
 import constants
@@ -96,7 +96,7 @@ class LsdDriver(AbstractDriver):
                 w.zip = str(row[6])
                 w.tax = float(row[7])
                 key = self.__w_key(w_id, '')
-                w = google.protobuf.text_format.MessageToString(w, as_one_line=True) # w = w.SerializeToString()
+                w = pb.MessageToString(w)
                 self.client.set(key, w, noreply=False)
                 w_ytd = row[8]
                 key = self.__w_key(w_id, 'ytd')
@@ -115,7 +115,7 @@ class LsdDriver(AbstractDriver):
                 d.zip = str(row[7])
                 d.tax = float(row[8])
                 key = self.__d_key(d_id, d_w_id, '')
-                d = google.protobuf.text_format.MessageToString(d, as_one_line=True) # d = d.SerializeToString()
+                d = pb.MessageToString(d)
                 self.client.set(key, d, noreply=False)
                 d_ytd = row[9]
                 key = self.__d_key(d_id, d_w_id, 'ytd')
@@ -148,7 +148,7 @@ class LsdDriver(AbstractDriver):
                 c.credit_lim = str(row[14])
                 c.discount = float(row[15])
                 key = self.__c_key(c_id, c_d_id, c_w_id, '')
-                c = google.protobuf.text_format.MessageToString(c, as_one_line=True) # c = c.SerializeToString()
+                c = pb.MessageToString(c)
                 self.client.set(key, c, noreply=False)
                 c_balance = row[16]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'balance')
@@ -178,9 +178,9 @@ class LsdDriver(AbstractDriver):
                 exists = value is not None
                 l = tpcc_pb2.customer_index()
                 if exists:
-                    google.protobuf.text_format.Merge(value, l) # l.ParseFromString(value)
+                    pb.Merge(value, l) # l.ParseFromString(value)
                 l.c_id.extend(v)
-                l = google.protobuf.text_format.MessageToString(l, as_one_line=True) # l = l.SerializeToString()
+                l = pb.MessageToString(l)
                 self.client.set(k, l, noreply=False)
         elif tableName == constants.TABLENAME_HISTORY:
             for row in tuples:
@@ -198,7 +198,7 @@ class LsdDriver(AbstractDriver):
                 h.amount = float(row[6])
                 h.data = str(row[7])
                 key = self.__h_key(h_uuid, h_c_id, h_c_w_id, h_w_id, '')
-                h = google.protobuf.text_format.MessageToString(h, as_one_line=True) # h = h.SerializeToString()
+                h = pb.MessageToString(h)
                 self.client.set(key, h, noreply=False)
         elif tableName == constants.TABLENAME_NEW_ORDER:
             index = {}
@@ -234,7 +234,7 @@ class LsdDriver(AbstractDriver):
                 o.ol_cnt = int(row[6])
                 o.all_local = bool(row[7])
                 key = self.__o_key(o_id, o_d_id, o_w_id, '')
-                o = google.protobuf.text_format.MessageToString(o, as_one_line=True) # o = o.SerializeToString()
+                o = pb.MessageToString(o)
                 self.client.set(key, o, noreply=False)
                 o_carrier_id = row[5]
                 key = self.__o_key(o_id, o_d_id, o_w_id, 'carrier_id')
@@ -259,7 +259,7 @@ class LsdDriver(AbstractDriver):
                 ol.amount = float(row[8])
                 ol.dist_info = str(row[9])
                 key = self.__ol_key(ol_number, ol_o_id, ol_d_id, ol_w_id, '')
-                ol = google.protobuf.text_format.MessageToString(ol, as_one_line=True) # ol = ol.SerializeToString()
+                ol = pb.MessageToString(ol)
                 self.client.set(key, ol, noreply=False)
                 ol_delivery_d = row[6]
                 key = self.__ol_key(ol_number, ol_o_id, ol_d_id, ol_w_id, 'delivery_d')
@@ -273,7 +273,7 @@ class LsdDriver(AbstractDriver):
                 i.price = float(row[3])
                 i.data = str(row[4])
                 key = self.__i_key(i_id, '')
-                i = google.protobuf.text_format.MessageToString(i, as_one_line=True) # i = i.SerializeToString()
+                i = pb.MessageToString(i)
                 self.client.set(key, i, noreply=False)
         elif tableName == constants.TABLENAME_STOCK:
             for row in tuples:
@@ -292,7 +292,7 @@ class LsdDriver(AbstractDriver):
                 s.dist_10 = str(row[12])
                 s.data = str(row[16])
                 key = self.__s_key(s_i_id, s_w_id, '')
-                s = google.protobuf.text_format.MessageToString(s, as_one_line=True) # s = s.SerializeToString()
+                s = pb.MessageToString(s)
                 self.client.set(key, s, noreply=False)
                 s_quantity = row[2]
                 key = self.__s_key(s_i_id, s_w_id, 'quantity')
