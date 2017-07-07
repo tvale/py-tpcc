@@ -404,7 +404,20 @@ class LsdDriver(AbstractDriver):
         c_last = params['c_last']
         h_date = params['h_date']
         assert (c_id != None and c_last == None) or (c_id == None and c_last != None)
-        # TODO
+        args = tpcc_pb2.payment_args()
+        args.w_id = w_id
+        args.d_id = d_id
+        args.h_amount = h_amount
+        args.h_date = str(h_date)
+        args.c_w_id = c_w_id
+        args.c_d_id = c_d_id
+        if c_id is not None:
+            args.c_id = c_id
+        else:
+            args.c_last = c_last
+        args = pb.MessageToString(args)
+        self.client.add('tpcc.payment', args, noreply=False)
+        return 1
 
     def doStockLevel(self, params):
         """
