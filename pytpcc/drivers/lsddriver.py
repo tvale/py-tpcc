@@ -361,7 +361,7 @@ class LsdDriver(AbstractDriver):
         args.w_id = w_id
         args.d_id = d_id
         args.c_id = c_id
-        args.o_entry_d = o_entry_d
+        args.o_entry_d = str(o_entry_d)
         args.i_ids.extend(i_ids)
         args.i_w_ids.extend(i_w_ids)
         args.i_qtys.extend(i_qtys)
