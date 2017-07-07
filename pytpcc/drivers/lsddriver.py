@@ -322,15 +322,12 @@ class LsdDriver(AbstractDriver):
         Execute DELIVERY Transaction
         Parameters Dict:
             w_id
-            d_ids
             o_carrier_id
             ol_delivery_d
         """
         w_id = params['w_id']
-        d_ids = params['d_ids']
         o_carrier_id = params['o_carrier_id']
         ol_delivery_d = params['ol_delivery_d']
-        d_id = params['tid']
         # TODO
 
     def doNewOrder(self, params):
