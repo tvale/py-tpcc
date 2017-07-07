@@ -357,7 +357,17 @@ class LsdDriver(AbstractDriver):
         assert len(i_ids) == len(i_w_ids)
         assert len(i_ids) == len(i_qtys)
         assert len(set(i_ids)) == len(i_ids)
-        # TODO
+        args = tpcc_pb2.new_order_args()
+        args.w_id = w_id
+        args.d_id = d_id
+        args.c_id = c_id
+        args.o_entry_d = o_entry_d
+        args.i_ids.extend(i_ids)
+        args.i_w_ids.extend(i_w_ids)
+        args.i_qtys.extend(i_qtys)
+        args = pb.MessageToString(args)
+        self.client.add('tpcc.new_order', args, noreply=False)
+        return 1
 
     def doOrderStatus(self, params):
         """
