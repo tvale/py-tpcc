@@ -38,6 +38,8 @@ from abstractdriver import *
 ## ==============================================
 class LsdDriver(AbstractDriver):
     DEFAULT_CONFIG = {
+        'host': ('server host', 'localhost'),
+        'port': ('server port', '11211'),
         'clients': ('client hosts', 'node1 node2'),
         'path': ('path to pytpcc code on client nodes', '/home/ubuntu/lsd/bench/tpcc/pytpcc'),
     }
@@ -45,7 +47,6 @@ class LsdDriver(AbstractDriver):
     def __init__(self, ddl):
         super(LsdDriver, self).__init__('lsd', ddl)
         self.name = 'lsd'
-        self.client = memcached(('localhost', 11211), no_delay=False)
 
     def makeDefaultConfig(self):
         """This function needs to be implemented by all sub-classes.
@@ -56,7 +57,7 @@ class LsdDriver(AbstractDriver):
 
     def loadConfig(self, config):
         """Initialize the driver using the given configuration dict"""
-        pass
+        self.client = memcached((config['host'], int(config['port'])), no_delay=False)
 
     def loadStart(self):
         """Optional callback to indicate to the driver that the data loading phase is about to begin."""
