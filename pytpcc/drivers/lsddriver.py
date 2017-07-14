@@ -329,7 +329,13 @@ class LsdDriver(AbstractDriver):
         w_id = params['w_id']
         o_carrier_id = params['o_carrier_id']
         ol_delivery_d = params['ol_delivery_d']
-        # TODO
+        args = tpcc_pb2.delivery_args()
+        args.w_id = w_id
+        args.o_carrier_id = o_carrier_id
+        args.ol_delivery_d = str(ol_delivery_d)
+        args = pb.MessageToString(args)
+        self.client.add('tpcc.delivery', args, noreply=False)
+        return 1
 
     def doNewOrder(self, params):
         """
