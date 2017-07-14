@@ -381,7 +381,16 @@ class LsdDriver(AbstractDriver):
         c_id = params['c_id']
         c_last = params['c_last']
         assert (c_id != None and c_last == None) or (c_id == None and c_last != None)
-        # TODO
+        args = tpcc_pb2.order_status_args()
+        args.w_id = w_id;
+        args.d_id = d_id;
+        if c_id is not None:
+            args.c_id = c_id
+        else:
+            args.c_last = c_last
+        args = pb.MessageToString(args)
+        self.client.add('tpcc.order_status', args, noreply=False)
+        return 1
 
     def doPayment(self, params):
         """
