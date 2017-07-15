@@ -446,7 +446,13 @@ class LsdDriver(AbstractDriver):
         w_id = params['w_id']
         d_id = params['d_id']
         threshold = params['threshold']
-        # TODO
+        args = tpcc_pb2.stock_level_args()
+        args.w_id = w_id
+        args.d_id = d_id
+        args.threshold = threshold
+        args = pb.MessageToString(args)
+        self.client.add('tpcc.stock_level', args, noreply=False)
+        return 1
 
     def __w_key(self, w_id, field):
         k = 'w-{}-{}'
