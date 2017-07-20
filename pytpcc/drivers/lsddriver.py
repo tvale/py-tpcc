@@ -40,7 +40,7 @@ class LsdDriver(AbstractDriver):
     DEFAULT_CONFIG = {
         'host': ('server host', 'localhost'),
         'port': ('server port', '11211'),
-        'clients': ('client hosts', 'node1 node2'),
+        'clients': ('client hosts:#processes', 'node1:1 node2:4'),
         'path': ('path to pytpcc code on client nodes', '/home/ubuntu/lsd/bench/tpcc/pytpcc'),
     }
 

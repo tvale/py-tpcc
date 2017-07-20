@@ -178,16 +178,22 @@ if __name__ == '__main__':
     ##Get a list of clientnodes from configuration file.
     clients=[]
     channels=[]
+    total_clients = 0
     assert config['clients']!=''
     clients=re.split(r"\s+",str(config['clients']))
-    #print clients, len(clients),args['clientprocs']
+    print clients, len(clients)
     ##Create ssh channels to client nodes
-    for node in clients:
+    for node_thread in clients:
+        tmp = re.split(r":", node_thread)
+        node = tmp[0]
+        threads = int(tmp[1])
+        total_clients += threads
+        print 'launching {} clients @ {}'.format(threads, node)
         cmd = 'ssh='+ node
         cmd += r"//chdir="
         cmd += config['path']
         #print cmd
-        for i in range(args['clientprocs']):
+        for i in range(threads):
             gw=execnet.makegateway(cmd)
             ch=gw.remote_exec(worker)
             channels.append(ch)
@@ -196,7 +202,7 @@ if __name__ == '__main__':
     scaleParameters = scaleparameters.makeWithScaleFactor(args['warehouses'], args['scalefactor'])
     nurand = rand.setNURand(nurand.makeForLoad())
     if args['debug']: logging.debug("Scale Parameters:\n%s" % scaleParameters)
-    
+    if args['debug']: logging.debug("Total clients: %s" % str(total_clients))
     ## DATA LOADER!!!
     load_time = None
     if not args['no_load']:
