@@ -216,7 +216,7 @@ if __name__ == '__main__':
     if not args['no_execute']:
         results = startExecution(scaleParameters, args, config,channels)
         assert results
-        print results.show(load_time)
+        print results.show(args['duration'], load_time)
     ## IF
     
 ## MAIN

@@ -93,7 +93,7 @@ class Results:
     def __str__(self):
         return self.show()
         
-    def show(self, load_time = None):
+    def show(self, arg_duration, load_time = None):
         if self.start == None:
             return "Benchmark not started"
         if self.stop == None:
@@ -110,7 +110,7 @@ class Results:
         if load_time != None:
             ret += "Data Loading Time: %d seconds\n\n" % (load_time)
         
-        ret += "Execution Results after %d seconds\n%s" % (duration, line)
+        ret += "Execution Results after %d seconds\n%s" % (arg_duration, line)
         ret += f % ("", "Executed", u"Time (µs)", "Rate")
         
         total_time = 0
