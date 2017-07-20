@@ -98,7 +98,7 @@ def executorFunc(driverClass, scaleParameters, args, config, debug):
 
     e = executor.Executor(driver, scaleParameters, stop_on_error=args['stop_on_error'])
     driver.executeStart()
-    results = e.execute(args['duration'])
+    results = e.execute(args['duration'], args['warmup'])
     driver.executeFinish()
     
     return results

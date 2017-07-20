@@ -64,18 +64,19 @@ class Results:
         txn_name, txn_start = self.running[id]
         del self.running[id]
         
-    def stopTransaction(self, id):
+    def stopTransaction(self, id, measure):
         """Record that the benchmark completed an invocation of the given transaction"""
         assert id in self.running
         txn_name, txn_start = self.running[id]
         del self.running[id]
         
-        duration = time.time() - txn_start
-        total_time = self.txn_times.get(txn_name, 0)
-        self.txn_times[txn_name] = total_time + duration
-        
-        total_cnt = self.txn_counters.get(txn_name, 0)
-        self.txn_counters[txn_name] = total_cnt + 1
+        if measure:
+            duration = time.time() - txn_start
+            total_time = self.txn_times.get(txn_name, 0)
+            self.txn_times[txn_name] = total_time + duration
+            
+            total_cnt = self.txn_counters.get(txn_name, 0)
+            self.txn_counters[txn_name] = total_cnt + 1
         
     def append(self, r):
         for txn_name in r.txn_counters.keys():

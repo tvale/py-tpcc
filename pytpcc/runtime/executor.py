@@ -43,6 +43,9 @@ from util import *
 
 
 class Executor:
+    __WARMUP = 0
+    __MEASURE = 1
+    __COOLDOWN = 2
     
     def __init__(self, driver, scaleParameters, stop_on_error = False):
         self.driver = driver
@@ -51,13 +54,23 @@ class Executor:
     ## DEF
     
     def execute(self, duration):
+        state = Executor.__WARMUP
         r = results.Results()
         assert r
-        logging.info("Executing benchmark for %d seconds" % duration)
+        logging.info("Warming up benchmark for %d seconds" % warmup)
         start = r.startBenchmark()
         debug = logging.getLogger().isEnabledFor(logging.DEBUG)
-
-        while (time.time() - start) <= duration:
+        cur_time = time.time()
+        elapsed = cur_time - start
+        while elapsed <= (duration + warmup * 2):
+            if warmup <= elapsed and elapsed < (warmup + duration):
+                if state != Executor.__MEASURE:
+                    logging.info("Measuring benchmark for %d seconds" % duration)
+                state = Executor.__MEASURE
+            elif (warmup + duration) <= elapsed:
+                if state != Executor.__COOLDOWN:
+                    logging.info("Cooling down benchmark for %d seconds" % warmup)
+                state = Executor.__COOLDOWN
             txn, params = self.doOne()
             txn_id = r.startTransaction(txn)
             
@@ -72,10 +85,12 @@ class Executor:
                 if self.stop_on_error: raise
                 r.abortTransaction(txn_id)
                 continue
+            cur_time = time.time()
+            elapsed = cur_time - start
 
             #if debug: logging.debug("%s\nParameters:\n%s\nResult:\n%s" % (txn, pformat(params), pformat(val)))
             
-            r.stopTransaction(txn_id)
+            r.stopTransaction(txn_id, state == Executor.__MEASURE)
         ## WHILE
             
         r.stopBenchmark()

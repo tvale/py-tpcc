@@ -126,6 +126,8 @@ if __name__ == '__main__':
                          help='Number of Warehouses')
     aparser.add_argument('--duration', default=60, type=int, metavar='D',
                          help='How long to run the benchmark in seconds')
+    aparser.add_argument('--warmup', default=10, type=int,
+                         help='How long to warmup/cooldown the benchmark in seconds')
     aparser.add_argument('--ddl', default=os.path.realpath(os.path.join(os.path.dirname(__file__), "tpcc.sql")),
                          help='Path to the TPC-C DDL SQL file')
     ## number of processes per node
