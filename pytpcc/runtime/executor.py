@@ -53,7 +53,7 @@ class Executor:
         self.stop_on_error = stop_on_error
     ## DEF
     
-    def execute(self, duration):
+    def execute(self, duration, warmup):
         state = Executor.__WARMUP
         r = results.Results()
         assert r
