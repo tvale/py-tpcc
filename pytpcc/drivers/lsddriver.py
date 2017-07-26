@@ -27,7 +27,6 @@
 import logging
 from datetime import datetime
 import tpcc_pb2
-import google.protobuf.text_format as pb
 from pymemcache.client.base import Client as memcached
 import uuid
 import constants
@@ -97,7 +96,7 @@ class LsdDriver(AbstractDriver):
                 w.zip = str(row[6])
                 w.tax = float(row[7])
                 key = self.__w_key(w_id, '')
-                w = pb.MessageToString(w)
+                w = w.SerializeToString()
                 self.client.set(key, w, noreply=False)
                 w_ytd = row[8]
                 key = self.__w_key(w_id, 'ytd')
@@ -116,7 +115,7 @@ class LsdDriver(AbstractDriver):
                 d.zip = str(row[7])
                 d.tax = float(row[8])
                 key = self.__d_key(d_id, d_w_id, '')
-                d = pb.MessageToString(d)
+                d = d.SerializeToString()
                 self.client.set(key, d, noreply=False)
                 d_ytd = row[9]
                 key = self.__d_key(d_id, d_w_id, 'ytd')
@@ -149,7 +148,7 @@ class LsdDriver(AbstractDriver):
                 c.credit_lim = str(row[14])
                 c.discount = float(row[15])
                 key = self.__c_key(c_id, c_d_id, c_w_id, '')
-                c = pb.MessageToString(c)
+                c = c.SerializeToString()
                 self.client.set(key, c, noreply=False)
                 c_balance = row[16]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'balance')
@@ -181,7 +180,7 @@ class LsdDriver(AbstractDriver):
                 if exists:
                     pb.Merge(value, l) # l.ParseFromString(value)
                 l.c_id.extend(v)
-                l = pb.MessageToString(l)
+                l = l.SerializeToString()
                 self.client.set(k, l, noreply=False)
         elif tableName == constants.TABLENAME_HISTORY:
             for row in tuples:
@@ -199,7 +198,7 @@ class LsdDriver(AbstractDriver):
                 h.amount = float(row[6])
                 h.data = str(row[7])
                 key = self.__h_key(h_uuid, h_c_id, h_c_w_id, h_w_id, '')
-                h = pb.MessageToString(h)
+                h = h.SerializeToString()
                 self.client.set(key, h, noreply=False)
         elif tableName == constants.TABLENAME_NEW_ORDER:
             index = {}
@@ -235,7 +234,7 @@ class LsdDriver(AbstractDriver):
                 o.ol_cnt = int(row[6])
                 o.all_local = bool(row[7])
                 key = self.__o_key(o_id, o_d_id, o_w_id, '')
-                o = pb.MessageToString(o)
+                o = o.SerializeToString()
                 self.client.set(key, o, noreply=False)
                 o_carrier_id = row[5]
                 key = self.__o_key(o_id, o_d_id, o_w_id, 'carrier_id')
@@ -260,7 +259,7 @@ class LsdDriver(AbstractDriver):
                 ol.amount = float(row[8])
                 ol.dist_info = str(row[9])
                 key = self.__ol_key(ol_number, ol_o_id, ol_d_id, ol_w_id, '')
-                ol = pb.MessageToString(ol)
+                ol = ol.SerializeToString()
                 self.client.set(key, ol, noreply=False)
                 ol_delivery_d = row[6]
                 key = self.__ol_key(ol_number, ol_o_id, ol_d_id, ol_w_id, 'delivery_d')
@@ -274,7 +273,7 @@ class LsdDriver(AbstractDriver):
                 i.price = float(row[3])
                 i.data = str(row[4])
                 key = self.__i_key(i_id, '')
-                i = pb.MessageToString(i)
+                i = i.SerializeToString()
                 self.client.set(key, i, noreply=False)
         elif tableName == constants.TABLENAME_STOCK:
             for row in tuples:
@@ -293,7 +292,7 @@ class LsdDriver(AbstractDriver):
                 s.dist_10 = str(row[12])
                 s.data = str(row[16])
                 key = self.__s_key(s_i_id, s_w_id, '')
-                s = pb.MessageToString(s)
+                s = s.SerializeToString()
                 self.client.set(key, s, noreply=False)
                 s_quantity = row[2]
                 key = self.__s_key(s_i_id, s_w_id, 'quantity')
@@ -333,7 +332,7 @@ class LsdDriver(AbstractDriver):
         args.w_id = w_id
         args.o_carrier_id = o_carrier_id
         args.ol_delivery_d = str(ol_delivery_d)
-        args = pb.MessageToString(args)
+        args = args.SerializeToString()
         self.client.add('tpcc.delivery', args, noreply=False)
         return 1
 
@@ -369,7 +368,7 @@ class LsdDriver(AbstractDriver):
         args.i_ids.extend(i_ids)
         args.i_w_ids.extend(i_w_ids)
         args.i_qtys.extend(i_qtys)
-        args = pb.MessageToString(args)
+        args = args.SerializeToString()
         self.client.add('tpcc.new_order', args, noreply=False)
         return 1
 
@@ -394,7 +393,7 @@ class LsdDriver(AbstractDriver):
             args.c_id = c_id
         else:
             args.c_last = c_last
-        args = pb.MessageToString(args)
+        args = args.SerializeToString()
         self.client.add('tpcc.order_status', args, noreply=False)
         return 1
 
@@ -431,7 +430,7 @@ class LsdDriver(AbstractDriver):
             args.c_id = c_id
         else:
             args.c_last = c_last
-        args = pb.MessageToString(args)
+        args = args.SerializeToString()
         self.client.add('tpcc.payment', args, noreply=False)
         return 1
 
@@ -450,7 +449,7 @@ class LsdDriver(AbstractDriver):
         args.w_id = w_id
         args.d_id = d_id
         args.threshold = threshold
-        args = pb.MessageToString(args)
+        args = args.SerializeToString()
         self.client.add('tpcc.stock_level', args, noreply=False)
         return 1
 
