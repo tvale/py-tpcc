@@ -44,6 +44,8 @@ from pprint import pprint,pformat
 from util import *
 from runtime import *
 import drivers
+from hdrh.histogram import HdrHistogram
+import constants
 
 logging.basicConfig(level = logging.INFO,
                     format="%(asctime)s [%(funcName)s:%(lineno)03d] %(levelname)-5s: %(message)s",
@@ -216,7 +218,35 @@ if __name__ == '__main__':
     if not args['no_execute']:
         results = startExecution(scaleParameters, args, config,channels)
         assert results
-        print results.show(args['duration'], load_time)
+        #print results.show(args['duration'], load_time)
+        hdr = HdrHistogram(1, 1000000, 3)
+        d = constants.TransactionTypes.DELIVERY
+        no = constants.TransactionTypes.NEW_ORDER
+        os = constants.TransactionTypes.ORDER_STATUS
+        p = constants.TransactionTypes.PAYMENT
+        sl = constants.TransactionTypes.STOCK_LEVEL
+        sum_commits = 0
+        for t in [d, no, os, p, sl]:
+            sum_commits += results.txn_counters[t]
+            hdr.add(results.txn_times[t])
+        throughput = sum_commits / args['duration']
+        print '[raw]'
+        print 'total = {}'.format(sum_commits)
+        print '[throughput]'
+        print 'commits/s = {}'.format(throughput)
+        print '[latency]'
+        print 'lat-min = {}'.format(hdr.get_min_value())
+        print 'lat-mean = {}'.format(hdr.get_mean_value())
+        print 'lat-median = {}'.format(hdr.get_value_at_percentile(50))
+        print 'lat-99 = {}'.format(hdr.get_value_at_percentile(99))
+        print 'lat-99.9 = {}'.format(hdr.get_value_at_percentile(99.9))
+        print 'lat-99.99 = {}'.format(hdr.get_value_at_percentile(99.99))
+        print 'lat-99.999 = {}'.format(hdr.get_value_at_percentile(99.999))
+        print 'lat-max = {}'.format(hdr.get_max_value())
+        print 'lat-raw =',
+        it = hdr.get_recorded_iterator()
+        for item in it:
+            print ' {}:{}'.format(item.value_iterated_to, item.total_count_to_this_value),
     ## IF
     
 ## MAIN

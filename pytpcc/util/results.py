@@ -26,6 +26,8 @@
 
 import logging
 import time
+import constants
+from hdrh.histogram import HdrHistogram
 
 class Results:
     
@@ -33,9 +35,20 @@ class Results:
         self.start = None
         self.stop = None
         self.txn_id = 0
-        
-        self.txn_counters = { }
-        self.txn_times = { }
+        self.txn_counters = {
+            constants.TransactionTypes.DELIVERY:     0,
+            constants.TransactionTypes.NEW_ORDER:    0,
+            constants.TransactionTypes.ORDER_STATUS: 0,
+            constants.TransactionTypes.PAYMENT:      0,
+            constants.TransactionTypes.STOCK_LEVEL:  0,
+        }
+        self.txn_times = {
+            constants.TransactionTypes.DELIVERY:     HdrHistogram(1, 1000000, 3),
+            constants.TransactionTypes.NEW_ORDER:    HdrHistogram(1, 1000000, 3),
+            constants.TransactionTypes.ORDER_STATUS: HdrHistogram(1, 1000000, 3),
+            constants.TransactionTypes.PAYMENT:      HdrHistogram(1, 1000000, 3),
+            constants.TransactionTypes.STOCK_LEVEL:  HdrHistogram(1, 1000000, 3),
+        }
         self.running = { }
         
     def startBenchmark(self):
@@ -72,8 +85,8 @@ class Results:
         
         if measure:
             duration = time.time() - txn_start
-            total_time = self.txn_times.get(txn_name, 0)
-            self.txn_times[txn_name] = total_time + duration
+            hdr = self.txn_times[txn_name]
+            hdr.record_value(duration * 1000000) # microsecs
             
             total_cnt = self.txn_counters.get(txn_name, 0)
             self.txn_counters[txn_name] = total_cnt + 1
@@ -81,10 +94,10 @@ class Results:
     def append(self, r):
         for txn_name in r.txn_counters.keys():
             orig_cnt = self.txn_counters.get(txn_name, 0)
-            orig_time = self.txn_times.get(txn_name, 0)
+            orig_hdr = self.txn_times[txn_name]
 
             self.txn_counters[txn_name] = orig_cnt + r.txn_counters[txn_name]
-            self.txn_times[txn_name] = orig_time + r.txn_times[txn_name]
+            orig_hdr.decode_and_add(r.txn_times[txn_name])
             #logging.debug("%s [cnt=%d, time=%d]" % (txn_name, self.txn_counters[txn_name], self.txn_times[txn_name]))
         ## HACK
         self.start = r.start

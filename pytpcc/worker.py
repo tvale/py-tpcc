@@ -42,6 +42,8 @@ from pprint import pprint,pformat
 from util import *
 from runtime import *
 import drivers
+from hdrh.histogram import HdrHistogram
+import constants
 
 ## ==============================================
 ## createDriverClass
@@ -137,6 +139,16 @@ if __name__=='__channelexec__':
                assert driver != None, "Failed to create '%s' driver" % args['system']
            
            results=executorFunc(driverClass,scaleParameters,args,config,True)
+           d = constants.TransactionTypes.DELIVERY
+           no = constants.TransactionTypes.NEW_ORDER
+           os = constants.TransactionTypes.ORDER_STATUS
+           p = constants.TransactionTypes.PAYMENT
+           sl = constants.TransactionTypes.STOCK_LEVEL
+           results.txn_times[d] = results.txn_times[d].encode()
+           results.txn_times[no] = results.txn_times[no].encode()
+           results.txn_times[os] = results.txn_times[os].encode()
+           results.txn_times[p] = results.txn_times[p].encode()
+           results.txn_times[sl] = results.txn_times[sl].encode()
            m=message.Message(header=message.EXECUTE_COMPLETED,data=results)
            channel.send(pickle.dumps(m,-1))
            
