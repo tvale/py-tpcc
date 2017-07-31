@@ -322,14 +322,17 @@ class LsdDriver(AbstractDriver):
         Execute DELIVERY Transaction
         Parameters Dict:
             w_id
+            d_id
             o_carrier_id
             ol_delivery_d
         """
         w_id = params['w_id']
+        d_id = params['d_id']
         o_carrier_id = params['o_carrier_id']
         ol_delivery_d = params['ol_delivery_d']
         args = tpcc_pb2.delivery_args()
         args.w_id = w_id
+        args.d_id = d_id
         args.o_carrier_id = o_carrier_id
         args.ol_delivery_d = str(ol_delivery_d)
         args = args.SerializeToString()

@@ -59,6 +59,7 @@ class Executor:
         assert r
         logging.info("Warming up benchmark for %d seconds" % warmup)
         start = r.startBenchmark()
+        txn = None
         debug = logging.getLogger().isEnabledFor(logging.DEBUG)
         cur_time = time.time()
         elapsed = cur_time - start
@@ -71,12 +72,18 @@ class Executor:
                 if state != Executor.__COOLDOWN:
                     logging.info("Cooling down benchmark for %d seconds" % warmup)
                 state = Executor.__COOLDOWN
-            txn, params = self.doOne()
+            if txn != constants.TransactionTypes.DELIVERY:
+                txn, params = self.doOne()
             txn_id = r.startTransaction(txn)
             
             if debug: logging.debug("Executing '%s' transaction" % txn)
             try:
                 val = self.driver.executeTransaction(txn, params)
+                if txn == constants.TransactionTypes.DELIVERY: 
+                    if params['d_id'] < constants.DISTRICTS_PER_WAREHOUSE:
+                        params['d_id'] += 1
+                    else:
+                        txn = None
             except KeyboardInterrupt:
                 return -1
             except (Exception, AssertionError), ex:
@@ -127,9 +134,10 @@ class Executor:
     def generateDeliveryParams(self):
         """Return parameters for DELIVERY"""
         w_id = self.makeWarehouseId()
+        d_id = 1
         o_carrier_id = rand.number(constants.MIN_CARRIER_ID, constants.MAX_CARRIER_ID)
         ol_delivery_d = datetime.now()
-        return makeParameterDict(locals(), "w_id", "o_carrier_id", "ol_delivery_d")
+        return makeParameterDict(locals(), "w_id", "d_id", "o_carrier_id", "ol_delivery_d")
     ## DEF
 
     ## ----------------------------------------------
