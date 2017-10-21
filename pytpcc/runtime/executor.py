@@ -40,7 +40,7 @@ from pprint import pprint,pformat
 
 import constants
 from util import *
-
+import platform
 
 class Executor:
     __WARMUP = 0
@@ -51,6 +51,7 @@ class Executor:
         self.driver = driver
         self.scaleParameters = scaleParameters
         self.stop_on_error = stop_on_error
+        self.next_txn = None
     ## DEF
     
     def execute(self, duration, warmup):
@@ -59,7 +60,6 @@ class Executor:
         assert r
         logging.info("Warming up benchmark for %d seconds" % warmup)
         start = r.startBenchmark()
-        txn = None
         debug = logging.getLogger().isEnabledFor(logging.DEBUG)
         cur_time = time.time()
         elapsed = cur_time - start
@@ -72,60 +72,71 @@ class Executor:
                 if state != Executor.__COOLDOWN:
                     logging.info("Cooling down benchmark for %d seconds" % warmup)
                 state = Executor.__COOLDOWN
-            if txn != constants.TransactionTypes.DELIVERY:
-                txn, params = self.doOne()
-            txn_id = r.startTransaction(txn)
-            
-            if debug: logging.debug("Executing '%s' transaction" % txn)
+            txn, params, txn_id = self.doOne(r)
+            if debug: logging.debug("Executing '%s' transaction: %s" % (txn, str(params)))
             try:
                 val = self.driver.executeTransaction(txn, params)
-                if txn == constants.TransactionTypes.DELIVERY: 
-                    if params['d_id'] < constants.DISTRICTS_PER_WAREHOUSE:
-                        params['d_id'] += 1
-                    else:
-                        txn = None
+                self.didOne(r, state)
             except KeyboardInterrupt:
                 return -1
             except (Exception, AssertionError), ex:
-                logging.warn("Failed to execute Transaction '%s': %s" % (txn, ex))
-                if debug: traceback.print_exc(file=sys.stdout)
+                # logging.warn("[%s] Failed to execute Transaction '%s': %s" % (platform.node(), txn, ex))
+                # traceback.print_exc(file=sys.stdout)
                 if self.stop_on_error: raise
-                r.abortTransaction(txn_id)
-                continue
+                if state == Executor.__MEASURE:
+                    r.abortTransaction(txn_id)
             cur_time = time.time()
             elapsed = cur_time - start
 
             #if debug: logging.debug("%s\nParameters:\n%s\nResult:\n%s" % (txn, pformat(params), pformat(val)))
-            
-            r.stopTransaction(txn_id, state == Executor.__MEASURE)
         ## WHILE
             
         r.stopBenchmark()
         return (r)
     ## DEF
-    
-    def doOne(self):
+    def doOne(self, r):
         """Selects and executes a transaction at random. The number of new order transactions executed per minute is the official "tpmC" metric. See TPC-C 5.4.2 (page 71)."""
         
         ## This is not strictly accurate: The requirement is for certain
         ## *minimum* percentages to be maintained. This is close to the right
         ## thing, but not precisely correct. See TPC-C 5.2.4 (page 68).
-        x = rand.number(1, 100)
-        params = None
-        txn = None
-        if x <= 4: ## 4%
-            txn, params = (constants.TransactionTypes.STOCK_LEVEL, self.generateStockLevelParams())
-        elif x <= 4 + 4: ## 4%
-            txn, params = (constants.TransactionTypes.DELIVERY, self.generateDeliveryParams())
-        elif x <= 4 + 4 + 4: ## 4%
-            txn, params = (constants.TransactionTypes.ORDER_STATUS, self.generateOrderStatusParams())
-        elif x <= 43 + 4 + 4 + 4: ## 43%
-            txn, params = (constants.TransactionTypes.PAYMENT, self.generatePaymentParams())
-        else: ## 45%
-            assert x > 100 - 45
-            txn, params = (constants.TransactionTypes.NEW_ORDER, self.generateNewOrderParams())
-        
-        return (txn, params)
+        if self.next_txn is None:
+            x = rand.number(1, 100)
+            params = None
+            txn = None
+            if x <= 4: ## 4%
+                txn, params = (constants.TransactionTypes.STOCK_LEVEL, self.generateStockLevelParams())
+                params['tid'] = 1
+            elif x <= 4 + 4: ## 4%
+                txn, params = (constants.TransactionTypes.DELIVERY, self.generateDeliveryParams())
+                params['tid'] = 1
+            elif x <= 4 + 4 + 4: ## 4%
+                txn, params = (constants.TransactionTypes.ORDER_STATUS, self.generateOrderStatusParams())
+            elif x <= 43 + 4 + 4 + 4: ## 43%
+                txn, params = (constants.TransactionTypes.PAYMENT, self.generatePaymentParams())
+            else: ## 45%
+                assert x > 100 - 45
+                txn, params = (constants.TransactionTypes.NEW_ORDER, self.generateNewOrderParams())
+            txn_id = r.startTransaction(txn)
+            self.next_txn = [txn, params, txn_id]
+        return self.next_txn
+    ## DEF
+    def didOne(self, r, state):
+        txn = self.next_txn[0]
+        params = self.next_txn[1]
+        txn_id = self.next_txn[2]
+        r.stopTransaction(txn_id, state == Executor.__MEASURE)
+        sl = constants.TransactionTypes.STOCK_LEVEL
+        d = constants.TransactionTypes.DELIVERY
+        dpw = self.scaleParameters.districtsPerWarehouse
+        if txn == sl and params['tid'] < 3:
+            params['tid'] = params['tid'] + 1
+            self.next_txn[2] = r.startTransaction(txn)
+        elif txn == d and params['tid'] < dpw:
+            params['tid'] = params['tid'] + 1
+            self.next_txn[2] = r.startTransaction(txn)
+        else:
+            self.next_txn = None
     ## DEF
 
     ## ----------------------------------------------
@@ -134,10 +145,10 @@ class Executor:
     def generateDeliveryParams(self):
         """Return parameters for DELIVERY"""
         w_id = self.makeWarehouseId()
-        d_id = 1
+        d_ids = range(1, self.scaleParameters.districtsPerWarehouse + 1)
         o_carrier_id = rand.number(constants.MIN_CARRIER_ID, constants.MAX_CARRIER_ID)
         ol_delivery_d = datetime.now()
-        return makeParameterDict(locals(), "w_id", "d_id", "o_carrier_id", "ol_delivery_d")
+        return makeParameterDict(locals(), "w_id", "d_ids", "o_carrier_id", "ol_delivery_d")
     ## DEF
 
     ## ----------------------------------------------
