@@ -59,44 +59,52 @@ class client:
             result = self._database.incr(self._transaction.id, 1, noreply=False)
             assert result is not None
 
-    def get(self, key):
+    def get(self, key, for_update=False):
         # simplify code by assuming:
         # a. no more than one get for a specific key per transaction
         # b. no get for a specific key if put before
         assert key not in self._rwset_index
         self._rwset_index[key] = None
-        reply = self._database.gets_many([self._transaction.id, 'tx', key])
+        reply = self._database.gets_many([self._transaction.id, 'tx', 'w' if for_update else 'r', key])
         exists = key in reply
-        value, _ = reply[key] if exists else (None, None)
+        value, preempted = reply[key] if exists else (None, None)
+        if preempted == '1':
+            self._retry('get')
         return (exists, value)
 
     def get_notxn(self, key):
-        reply = self._database.gets_many([self._transaction.id, 'notx', key])
+        reply = self._database.gets_many([self._transaction.id, 'notx', 'r', key])
         exists = key in reply
         assert exists
-        value, _ = reply[key]
+        value, preempted = reply[key]
+        if preempted == '1':
+            self._retry('get_notxn')
         return (exists, value)
 
-    def multiget(self, klist):
+    def multiget(self, klist, for_update=False):
         # simplify code by assuming:
         # a. no more than one get for a specific key per transaction
         # b. no get for a specific key if put before
         assert not filter(lambda k: k in self._rwset_index, klist)
         result = {}
-        replies = self._database.gets_many([self._transaction.id, 'tx'] + klist)
+        replies = self._database.gets_many([self._transaction.id, 'tx', 'w' if for_update else 'r'] + klist)
         for key in klist:
             self._rwset_index[key] = None
             exists = key in replies
-            value, _ = replies[key] if exists else (None, None)
+            value, preempted = replies[key] if exists else (None, None)
+            if preempted == '1':
+                self._retry('multiget')
             result[key] = (exists, value)
         return result
 
     def multiget_notxn(self, klist):
-        replies = self._database.gets_many([self._transaction.id, 'notx'] + klist)
+        replies = self._database.gets_many([self._transaction.id, 'notx', 'r'] + klist)
         result = {}
         for key in klist:
             assert key in replies
-            value, _ = replies[key]
+            value, preempted = replies[key]
+            if preempted == '1':
+                self._retry('multiget_notxn')
             result[key] = (True, value)
         return result
 
@@ -122,6 +130,7 @@ class client:
         entry.w.value = str(value)
 
     def commit(self):
+        self._transaction.wset.sort(key=lambda entry: entry.key)
         pb = self._transaction.SerializeToString()
         results = self._database.add(self._transaction.id, pb, expire=0, noreply=False)
         committed, _ = results['__lsd__committed']
@@ -461,11 +470,11 @@ class LsdDriver(AbstractDriver):
             FETCH c_no INTO :no_o_id;
             '''
             no_index_key = self.__no_index_key(d_id, w_id)
-            _, value = self.client.get(no_index_key)
+            _, value = self.client.get(no_index_key, for_update=True)
             o_id = int(value)
             # check if new-order exists
             no_key = self.__no_key(o_id, d_id, w_id, '')
-            exists, _ = self.client.get(no_key)
+            exists, _ = self.client.get(no_key, for_update=True)
             if not exists:
                 self.client.abort()
                 return 1
@@ -486,7 +495,7 @@ class LsdDriver(AbstractDriver):
             WHERE o_id = :no_o_id AND o_d_id = :d_id AND o_w_id = :w_id;
             '''
             o_key = self.__o_key(o_id, d_id, w_id, '')
-            exists, value = self.client.get(o_key)
+            exists, value = self.client.get(o_key, for_update=False)
             assert exists
             o = tpcc_pb2.order()
             o.ParseFromString(value)
@@ -518,7 +527,7 @@ class LsdDriver(AbstractDriver):
             for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                 keys.append(ol_key)
-            mg_res = self.client.multiget(keys)
+            mg_res = self.client.multiget(keys, for_update=False)
             ol_total = 0.0
             for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
@@ -542,7 +551,7 @@ class LsdDriver(AbstractDriver):
             '''
             c_balance_key = self.__c_key(c_id, d_id, w_id, 'balance')
             c_delivery_cnt_key = self.__c_key(c_id, d_id, w_id, 'delivery_cnt')
-            mg_res = self.client.multiget([c_balance_key, c_delivery_cnt_key])
+            mg_res = self.client.multiget([c_balance_key, c_delivery_cnt_key], for_update=True)
             exists, value = mg_res[c_balance_key]
             assert exists
             c_balance = float(value)
@@ -623,7 +632,7 @@ class LsdDriver(AbstractDriver):
             '''
             d_key = self.__d_key(d_id, w_id, '')
             d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
-            exists, value = self.client.get(d_next_o_id_key)
+            exists, value = self.client.get(d_next_o_id_key, for_update=True)
             d_next_o_id = int(value)
             exists, value = self.client.get_notxn(d_key)
             assert exists
@@ -734,7 +743,7 @@ class LsdDriver(AbstractDriver):
                 keys.append(s_order_cnt_key)
                 if ol_is_remote:
                     keys.append(s_remote_cnt_key)
-                mg_res = self.client.multiget(keys)
+                mg_res = self.client.multiget(keys, for_update=True)
                 exists, value = mg_res[s_quantity_key]
                 s_quantity = int(value)
                 exists, value = mg_res[s_ytd_key]
@@ -893,7 +902,7 @@ class LsdDriver(AbstractDriver):
             WHERE c_id = :c_id AND c_d_id = :d_id AND c_w_id = :w_id;
             '''
             c_balance_key = self.__c_key(c_id, d_id, w_id, 'balance')
-            exists, value = self.client.get(c_balance_key)
+            exists, value = self.client.get(c_balance_key, for_update=False)
             assert exists
             c_balance = float(value)
             '''
@@ -905,12 +914,12 @@ class LsdDriver(AbstractDriver):
             ORDER BY o_id DESC;
             '''
             key = self.__o_index_key(d_id, w_id, c_id)
-            exists, value = self.client.get(key)
+            exists, value = self.client.get(key, for_update=False)
             assert exists
             o_id = int(value)
             o_key = self.__o_key(o_id, d_id, w_id, '')
             o_carrier_id_key = self.__o_key(o_id, d_id, w_id, 'carrier_id')
-            mg_res = self.client.multiget([o_key, o_carrier_id_key])
+            mg_res = self.client.multiget([o_key, o_carrier_id_key], for_update=False)
             exists, value = mg_res[o_carrier_id_key]
             assert exists
             o_carrier_id = value
@@ -933,7 +942,7 @@ class LsdDriver(AbstractDriver):
                 ol_delivery_d_key = self.__ol_key(ol_number, o_id, d_id, w_id, 'delivery_d')
                 keys.append(ol_key)
                 keys.append(ol_delivery_d_key)
-            mg_res = self.client.multiget(keys)
+            mg_res = self.client.multiget(keys, for_update=False)
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: w_id={} d_id={} c_id={} c_last={}'
@@ -980,7 +989,7 @@ class LsdDriver(AbstractDriver):
             w = tpcc_pb2.warehouse()
             w.ParseFromString(value)
             w_name = w.name
-            exists, value = self.client.get(w_ytd_key)
+            exists, value = self.client.get(w_ytd_key, for_update=True)
             assert exists
             w_ytd = float(value)
             '''
@@ -1007,7 +1016,7 @@ class LsdDriver(AbstractDriver):
             d = tpcc_pb2.district()
             d.ParseFromString(value)
             d_name = d.name
-            exists, value = self.client.get(d_ytd_key)
+            exists, value = self.client.get(d_ytd_key, for_update=True)
             assert exists
             d_ytd = float(value)
             '''
@@ -1071,7 +1080,7 @@ class LsdDriver(AbstractDriver):
             c_balance_key = self.__c_key(c_id, c_d_id, c_w_id, 'balance')
             c_ytd_payment_key = self.__c_key(c_id, c_d_id, c_w_id, 'ytd_payment')
             c_payment_cnt_key = self.__c_key(c_id, c_d_id, c_w_id, 'payment_cnt')
-            mg_res = self.client.multiget([c_balance_key, c_ytd_payment_key, c_payment_cnt_key])
+            mg_res = self.client.multiget([c_balance_key, c_ytd_payment_key, c_payment_cnt_key], for_update=True)
             exists, value = mg_res[c_balance_key]
             c_balance = float(value)
             exists, value = mg_res[c_ytd_payment_key]
@@ -1106,7 +1115,7 @@ class LsdDriver(AbstractDriver):
             # TODO needs CONCAT binaryop and TRUNC unaryop
             if c_credit == constants.BAD_CREDIT:
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'data')
-                exists, value = self.client.get(key)
+                exists, value = self.client.get(key, for_update=True)
                 data = ' '.join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
                 c_data = (data + '|' + value)
                 if len(c_data) > constants.MAX_C_DATA:
@@ -1166,7 +1175,7 @@ class LsdDriver(AbstractDriver):
                 WHERE d_w_id = :w_id AND d_id = :d_id;
                 '''
                 d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
-                exists, value = self.client.get(d_next_o_id_key)
+                exists, value = self.client.get(d_next_o_id_key, for_update=False)
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting d_next_o_id)'
@@ -1191,7 +1200,7 @@ class LsdDriver(AbstractDriver):
                     o_id = d_next_o_id - j
                     o_key = self.__o_key(o_id, d_id, w_id, '')
                     keys.append(o_key)
-                mg_res = self.client.multiget(keys)
+                mg_res = self.client.multiget(keys, for_update=False)
                 ol_numbers = {}
                 for j in range(1, 21):
                     o_id = d_next_o_id - j
@@ -1210,7 +1219,7 @@ class LsdDriver(AbstractDriver):
                     for ol_number in range(o_ol_cnt):
                         ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                         keys.append(ol_key)
-                mg_res = self.client.multiget(keys)
+                mg_res = self.client.multiget(keys, for_update=False)
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting s_i_id)'
