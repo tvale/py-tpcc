@@ -56,7 +56,7 @@ class LsdDriver(AbstractDriver):
 
     def loadConfig(self, config):
         """Initialize the driver using the given configuration dict"""
-        self.client = memcached((config['host'], int(config['port'])), no_delay=False)
+        self.client = memcached((config['host'], int(config['port'])), no_delay=True)
 
     def loadStart(self):
         """Optional callback to indicate to the driver that the data loading phase is about to begin."""
