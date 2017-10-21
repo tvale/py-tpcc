@@ -1,0 +1,76 @@
+diff --git a/pymemcache/client/base.py b/pymemcache/client/base.py
+index 34dd4ae..8477294 100644
+--- a/pymemcache/client/base.py
++++ b/pymemcache/client/base.py
+@@ -336,9 +336,59 @@ class Client(object):
+           return value is True if the value was stgored, and False if it was
+           not (because the key already existed).
+         """
+-        if noreply is None:
+-            noreply = self.default_noreply
+-        return self._store_cmd(b'add', key, expire, noreply, value)
++        assert noreply is False
++        name = b'add'
++        data = value
++        cas = None
++        key = self.check_key(key)
++        if not self.sock:
++            self._connect()
++
++        if self.serializer:
++            data, flags = self.serializer(key, data)
++        else:
++            flags = 0
++
++        if not isinstance(data, six.binary_type):
++            try:
++                data = six.text_type(data).encode('ascii')
++            except UnicodeEncodeError as e:
++                raise MemcacheIllegalInputError(str(e))
++
++        extra = b''
++        if cas is not None:
++            extra += b' ' + cas
++        if noreply:
++            extra += b' noreply'
++
++        cmd = (name + b' ' + key + b' ' +
++               six.text_type(flags).encode('ascii') +
++               b' ' + six.text_type(expire).encode('ascii') +
++               b' ' + six.text_type(len(data)).encode('ascii') + extra +
++               b'\r\n' + data + b'\r\n')
++
++        try:
++            self.sock.sendall(cmd)
++
++            buf = b''
++            result = {}
++            while True:
++                buf, line = _readline(self.sock, buf)
++                self._raise_errors(line, name)
++                if line == b'END':
++                    return result
++                elif line.startswith(b'VALUE'):
++                    _, key, flags, size, cas = line.split()
++
++                    buf, value = _readvalue(self.sock, buf, int(size))
++                    key = self.check_key(key)
++
++                    result[key] = (value, cas)
++                else:
++                    raise MemcacheUnknownError(line[:32])
++        except Exception:
++            self.close()
++            raise
+ 
+     def replace(self, key, value, expire=0, noreply=None):
+         """
+@@ -712,7 +762,7 @@ class Client(object):
+             cmd = name + b' ' + b' '.join(checked_keys) + b'\r\n'
+         else:
+             checked_keys = dict((self.check_key(k), k) for k in keys)
+-            cmd = name + b' ' + b' '.join(checked_keys) + b'\r\n'
++            cmd = name + b' ' + b' '.join([self.check_key(k) for k in keys]) + b'\r\n'
+ 
+         try:
+             if not self.sock:

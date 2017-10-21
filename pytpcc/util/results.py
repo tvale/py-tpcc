@@ -36,18 +36,25 @@ class Results:
         self.stop = None
         self.txn_id = 0
         self.txn_counters = {
-            constants.TransactionTypes.DELIVERY:     0,
-            constants.TransactionTypes.NEW_ORDER:    0,
-            constants.TransactionTypes.ORDER_STATUS: 0,
-            constants.TransactionTypes.PAYMENT:      0,
-            constants.TransactionTypes.STOCK_LEVEL:  0,
+          constants.TransactionTypes.DELIVERY:     0,
+          constants.TransactionTypes.NEW_ORDER:    0,
+          constants.TransactionTypes.ORDER_STATUS: 0,
+          constants.TransactionTypes.PAYMENT:      0,
+          constants.TransactionTypes.STOCK_LEVEL:  0,
         }
         self.txn_times = {
-            constants.TransactionTypes.DELIVERY:     HdrHistogram(1, 1000000, 3),
-            constants.TransactionTypes.NEW_ORDER:    HdrHistogram(1, 1000000, 3),
-            constants.TransactionTypes.ORDER_STATUS: HdrHistogram(1, 1000000, 3),
-            constants.TransactionTypes.PAYMENT:      HdrHistogram(1, 1000000, 3),
-            constants.TransactionTypes.STOCK_LEVEL:  HdrHistogram(1, 1000000, 3),
+          constants.TransactionTypes.DELIVERY:     HdrHistogram(1, 1000000, 3),
+          constants.TransactionTypes.NEW_ORDER:    HdrHistogram(1, 1000000, 3),
+          constants.TransactionTypes.ORDER_STATUS: HdrHistogram(1, 1000000, 3),
+          constants.TransactionTypes.PAYMENT:      HdrHistogram(1, 1000000, 3),
+          constants.TransactionTypes.STOCK_LEVEL:  HdrHistogram(1, 1000000, 3),
+        }
+        self.txn_aborts = {
+          constants.TransactionTypes.DELIVERY:     0,
+          constants.TransactionTypes.NEW_ORDER:    0,
+          constants.TransactionTypes.ORDER_STATUS: 0,
+          constants.TransactionTypes.PAYMENT:      0,
+          constants.TransactionTypes.STOCK_LEVEL:  0,
         }
         self.running = { }
         
@@ -75,8 +82,10 @@ class Results:
         """Abort a transaction and discard its times"""
         assert id in self.running
         txn_name, txn_start = self.running[id]
-        del self.running[id]
-        
+        # del self.running[id]
+        aborts = self.txn_aborts.get(txn_name, 0)
+        self.txn_aborts[txn_name] = aborts + 1
+
     def stopTransaction(self, id, measure):
         """Record that the benchmark completed an invocation of the given transaction"""
         assert id in self.running
@@ -95,9 +104,10 @@ class Results:
         for txn_name in r.txn_counters.keys():
             orig_cnt = self.txn_counters.get(txn_name, 0)
             orig_hdr = self.txn_times[txn_name]
-
-            self.txn_counters[txn_name] = orig_cnt + r.txn_counters[txn_name]
+            orig_aborts = self.txn_aborts.get(txn_name, 0)
+            self.txn_counters[txn_name] = orig_cnt + r.txn_counters.get(txn_name, 0)
             orig_hdr.decode_and_add(r.txn_times[txn_name])
+            self.txn_aborts[txn_name] = orig_aborts + r.txn_aborts.get(txn_name, 0)
             #logging.debug("%s [cnt=%d, time=%d]" % (txn_name, self.txn_counters[txn_name], self.txn_times[txn_name]))
         ## HACK
         self.start = r.start
@@ -105,8 +115,8 @@ class Results:
             
     def __str__(self):
         return self.show()
-        
-    def show(self, arg_duration, load_time = None):
+
+    def show(self, load_time = None, total_clients = 1):
         if self.start == None:
             return "Benchmark not started"
         if self.stop == None:
@@ -115,30 +125,29 @@ class Results:
             duration = self.stop - self.start
         
         col_width = 16
-        total_width = (col_width*4)+2
-        f = "\n  " + (("%-" + str(col_width) + "s")*4)
+        total_width = (col_width*5)+2
+        f = "\n  " + (("%-" + str(col_width) + "s")*5)
         line = "-"*total_width
 
         ret = u"" + "="*total_width + "\n"
         if load_time != None:
             ret += "Data Loading Time: %d seconds\n\n" % (load_time)
-        
-        ret += "Execution Results after %d seconds\n%s" % (arg_duration, line)
-        ret += f % ("", "Executed", u"Time (µs)", "Rate")
-        
+        ret += "Execution Results after %d seconds\n%s" % (duration, line)
+        ret += f % ("", "Executed", "Aborts", u"Time (µs)", "Rate")
         total_time = 0
         total_cnt = 0
+        total_abort = 0
         for txn in sorted(self.txn_counters.keys()):
-            txn_time = self.txn_times[txn]
+            txn_time = self.txn_times[txn] / total_clients
             txn_cnt = self.txn_counters[txn]
+            txn_abort = self.txn_aborts[txn]
             rate = u"%.02f txn/s" % ((txn_cnt / txn_time))
-            ret += f % (txn, str(txn_cnt), str(txn_time * 1000000), rate)
-            
+            ret += f % (txn, str(txn_cnt), str(txn_abort), str(txn_time * 1000000), rate)
             total_time += txn_time
             total_cnt += txn_cnt
+            total_abort += txn_abort
         ret += "\n" + ("-"*total_width)
         total_rate = "%.02f txn/s" % ((total_cnt / total_time))
-        ret += f % ("TOTAL", str(total_cnt), str(total_time * 1000000), total_rate)
-
+        ret += f % ("TOTAL", str(total_cnt), str(total_abort), str(total_time * 1000000), total_rate)
         return (ret.encode('utf-8'))
 ## CLASS

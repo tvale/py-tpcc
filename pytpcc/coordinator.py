@@ -26,6 +26,7 @@
 # -----------------------------------------------------------------------
 
 import sys
+sys.path.insert(0, 'pymemcache')
 import subprocess
 import os
 import string
@@ -39,6 +40,7 @@ import pickle
 import execnet
 import worker
 import message
+import pickle
 from ConfigParser import SafeConfigParser
 from pprint import pprint,pformat
 
@@ -227,14 +229,20 @@ if __name__ == '__main__':
         p = constants.TransactionTypes.PAYMENT
         sl = constants.TransactionTypes.STOCK_LEVEL
         sum_commits = 0
+        sum_aborts = 0
         for t in [d, no, os, p, sl]:
             sum_commits += results.txn_counters[t]
+            sum_aborts  += results.txn_aborts[t]
             hdr.add(results.txn_times[t])
         throughput = sum_commits / args['duration']
+        total = (sum_commits + sum_aborts) / args['duration']
         print '[raw]'
-        print 'total = {}'.format(sum_commits)
+        print 'commited = {}'.format(sum_commits)
+        print 'aborted = {}'.format(sum_aborts)
+        print 'total = {}'.format(sum_commits + sum_aborts)
         print '[throughput]'
         print 'commits/s = {}'.format(throughput)
+        print 'txn/s = {}'.format(total)
         print '[latency]'
         print 'lat-min = {}'.format(hdr.get_min_value())
         print 'lat-mean = {}'.format(hdr.get_mean_value())
@@ -255,5 +263,4 @@ if __name__ == '__main__':
         output = nc.communicate()[0]
         print output
     ## IF
-    
 ## MAIN

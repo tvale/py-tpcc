@@ -26,6 +26,7 @@
 # -----------------------------------------------------------------------
 
 import sys
+sys.path.insert(0, 'pymemcache')
 import os
 import string
 import datetime

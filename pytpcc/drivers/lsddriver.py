@@ -46,179 +46,19 @@ class client:
         self._database = memcached((server_host, server_port), no_delay=True)
         self._rwset_index = {}
         self._transaction = api_pb2.transaction()
-        '''
-        # install future operations
-        self._future_ops = [None] * lsd_pb2.future.TOTAL
-        def read_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.READ
-            if f.rdata.resolved:
-                if f.rdata.data.existed:
-                    return f.rdata.data.value
-                else:
-                    return None
-            assert transient
-            key = f.rdata.key
-            assert key in env
-            data = env[key]
-            f.rdata.data.CopyFrom(data)
-            f.rdata.resolved = not transient
-            if f.rdata.data.existed:
-                return f.rdata.data.value
-            else:
-                return None
-        self._future_ops[lsd_pb2.future.READ] = read_op
-        def pointer_op(self, transaction, f, transient, env):
-            assert False
-        self._future_ops[lsd_pb2.future.POINTER] = pointer_op
-        def add_fi_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.ADD_FI
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = int(left_result) + int(right_result)
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.ADD_FI] = add_fi_op
-        def add_fd_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.ADD_FD
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = float(left_result) + float(right_result)
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.ADD_FD] = add_fd_op
-        def sub_fi_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.SUB_FI
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = int(left_result) - int(right_result)
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.SUB_FI] = sub_fi_op
-        def sub_fd_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.SUB_FD
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = float(left_result) - float(right_result)
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.SUB_FD] = sub_fd_op
-        def mul_fd_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.MUL_FD
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = float(left_result) * float(right_result)
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.MUL_FD] = mul_fd_op
-        def concat_fs_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.CONCAT_FS
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = left_result + right_result
-            f.binary_op.value = result
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.CONCAT_FS] = concat_fs_op
-        def concat_sf_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.CONCAT_SF
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_result = f.binary_op.left_param.value
-            right_f = transaction.fset[f.binary_op.right_param.index]
-            right_result = self._future_ops[right_f.type](self, transaction, right_f, transient, env)
-            result = left_result + right_result
-            f.binary_op.value = result
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.CONCAT_SF] = concat_sf_op
-        def trunc_fi_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.TRUNC_FI
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = left_result[:int(right_result)]
-            f.binary_op.value = result
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.TRUNC_FI] = trunc_fi_op
-        def gteq_fi_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.GTEQ_FI
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = int(left_result) >= int(right_result)
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.GTEQ_FI] = gteq_fi_op
-        def exists_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.EXISTS
-            if f.unary_op.resolved:
-                return f.unary_op.resolved
-            param_f = transaction.fset[f.unary_op.param.index]
-            assert param_f.type == lsd_pb2.future.READ
-            self._future_ops[param_f.type](self, transaction, param_f, transient, env)
-            result = param_f.rdata.data.existed
-            f.unary_op.value = str(result)
-            f.unary_op.resolved = not transient
-            return f.unary_op.value
-        self._future_ops[lsd_pb2.future.EXISTS] = exists_op
-        def substr_fs_op(self, transaction, f, transient, env):
-            assert f.type == lsd_pb2.future.SUBSTR_FS
-            if f.binary_op.resolved:
-                return f.binary_op.value
-            left_f = transaction.fset[f.binary_op.left_param.index]
-            left_result = self._future_ops[left_f.type](self, transaction, left_f, transient, env)
-            right_result = f.binary_op.right_param.value
-            result = right_result in left_result
-            f.binary_op.value = str(result)
-            f.binary_op.resolved = not transient
-            return f.binary_op.value
-        self._future_ops[lsd_pb2.future.SUBSTR_FS] = substr_fs_op
-        def none_op(self, transaction, f, transient, env):
-            assert False
-        self._future_ops[lsd_pb2.future.NONE] = none_op
-        '''
+        self._is_retrying = False
     
     def begin(self):
         self._rwset_index = {}
         # - as separator because it's ASCII value is < than alphanum
         self._transaction.id = '{}-{}'.format(self._transaction_counter, self._id)
-        del self._transaction.rwset[:]
+        del self._transaction.wset[:]
         del self._transaction.fwset[:]
         del self._transaction.pset[:]
-        self._transaction.num_futures = 0
-        del self._transaction.fset[:]
-        self._database.cas(self._transaction.id, '', '0', expire=0, noreply=False)
+        if not self._is_retrying:
+            result = self._database.incr(self._transaction.id, 1, noreply=False)
+            assert result is not None
 
-    '''def get(self, key, lsd_api=False, for_update=False):'''
     def get(self, key):
         # simplify code by assuming:
         # a. no more than one get for a specific key per transaction
@@ -229,32 +69,6 @@ class client:
         exists = key in reply
         value, _ = reply[key] if exists else (None, None)
         return (exists, value)
-        '''
-        entry = self._transaction.rwset.add()
-        self._rwset_index[key] = entry
-        entry.key = key
-        entry.type = entry.READ
-        if lsd_api:
-            entry.r.is_future = True
-            f_index = len(self._transaction.fset)
-            f = self._transaction.fset.add()
-            f.type = lsd_pb2.future.READ
-            f.rdata.resolved = False
-            f.rdata.key = key
-            entry.r.future_index = f_index
-            fptr = lsd_pb2.future()
-            fptr.type = lsd_pb2.future.POINTER
-            fptr.index = f_index
-            return fptr
-        else:
-            value, version = self._database.gets(key)
-            entry.r.is_future = False
-            entry.r.concrete.existed = value is not None
-            if entry.r.concrete.existed:
-                entry.r.concrete.value = value
-                entry.r.concrete.version = long(version)
-            return (entry.r.concrete.existed, value)
-        '''
 
     def get_notxn(self, key):
         reply = self._database.gets_many([self._transaction.id, 'notx', key])
@@ -262,13 +76,7 @@ class client:
         assert exists
         value, _ = reply[key]
         return (exists, value)
-        '''
-        value, _ = self._database.gets(key)
-        assert value is not None
-        return (True, value)
-        '''
 
-    '''def multiget(self, klist, lsd_api=False, for_update=False):'''
     def multiget(self, klist):
         # simplify code by assuming:
         # a. no more than one get for a specific key per transaction
@@ -282,27 +90,6 @@ class client:
             value, _ = replies[key] if exists else (None, None)
             result[key] = (exists, value)
         return result
-        '''
-        if lsd_api:
-            for key in klist:
-                result[key] = self.get(key, lsd_api=True)
-        else:
-            replies = self._database.gets_many(klist)
-            for key in klist:
-                exists = key in replies
-                value, version = replies[key] if exists else (None, None)
-                entry = self._transaction.rwset.add()
-                self._rwset_index[key] = entry
-                entry.key = key
-                entry.type = entry.READ
-                entry.r.is_future = False
-                entry.r.concrete.existed = exists
-                if exists:
-                    entry.r.concrete.value = value
-                    entry.r.concrete.version = long(version)
-                result[key] = (exists, value)
-        return result
-        '''
 
     def multiget_notxn(self, klist):
         replies = self._database.gets_many([self._transaction.id, 'notx'] + klist)
@@ -313,277 +100,49 @@ class client:
             result[key] = (True, value)
         return result
 
-    '''
-    def is_true(self, fptr, assume=None):
-        assert isinstance(fptr, lsd_pb2.future)
-        assert fptr.type == lsd_pb2.future.POINTER
-        assert assume is None
-        predicate = self._transaction.pset.add()
-        predicate.func.keys.extend(self._keys(self._transaction.fset[fptr.index]))
-        predicate.func.index = fptr.index
-        assert len(predicate.func.keys) == 1
-        key = predicate.func.keys[0]
-        f_read_index = self._rwset_index[key].r.future_index
-        f_read = self._transaction.fset[f_read_index].rdata
-        assert f_read.key == key
-        data = f_read.data
-        if not f_read.resolved:
-            value, version = self._database.gets(key)
-            f_read.resolved = True
-            data.existed = value is not None
-            if data.existed:
-                data.value = value
-                data.version = long(version)
-        f = self._transaction.fset[fptr.index]
-        predicate.expected = self._resolve(f, transient=True, env={key: data}) == 'True'
-        return predicate.expected
-    '''
-
-    '''
-    def _resolve(self, f, transient=False, env={}):
-        return self._future_ops[f.type](self, self._transaction, f, transient, env)
-    '''
-
-    '''
-    def _keys(self, f):
-        assert isinstance(f, lsd_pb2.future)
-        assert f.type != lsd_pb2.future.POINTER
-        assert f.type == lsd_pb2.future.READ or f.type == lsd_pb2.future.ADD_FI or f.type == lsd_pb2.future.ADD_FD or f.type == lsd_pb2.future.SUB_FI or f.type == lsd_pb2.future.SUB_FD or f.type == lsd_pb2.future.MUL_FD or f.type == lsd_pb2.future.CONCAT_FS or f.type == lsd_pb2.future.CONCAT_SF or f.type == lsd_pb2.future.TRUNC_FI or f.type == lsd_pb2.future.GTEQ_FI or f.type == lsd_pb2.future.EXISTS or f.type == lsd_pb2.future.SUBSTR_FS
-        if f.type == lsd_pb2.future.READ:
-            return [f.rdata.key]
-        elif f.type == lsd_pb2.future.ADD_FI or f.type == lsd_pb2.future.ADD_FD or f.type == lsd_pb2.future.SUB_FI or f.type  == lsd_pb2.future.SUB_FD or f.type == lsd_pb2.future.MUL_FD or f.type == lsd_pb2.future.CONCAT_FS or f.type == lsd_pb2.future.TRUNC_FI or f.type == lsd_pb2.future.GTEQ_FI or f.type == lsd_pb2.future.SUBSTR_FS:
-            return self._keys(self._transaction.fset[f.binary_op.left_param.index])
-        elif f.type == lsd_pb2.future.CONCAT_SF:
-            return self._keys(self._transaction.fset[f.binary_op.right_param.index])
-        else: # f.type == lsd_pb2.future.EXISTS
-            assert f.type == lsd_pb2.future.EXISTS
-            return self._keys(self._transaction.fset[f.unary_op.param.index])
-    '''
-
-    '''def put(self, key, value, lsd_api=False, lsd_key=False, lsd_value=False):'''
     def put(self, key, value):
         self._write(api_pb2.write.SET, key, value)
-        '''
-        assert lsd_key or lsd_value if lsd_api else not lsd_key and not lsd_value
-        assert not lsd_key or key.type == lsd_pb2.future.POINTER
-        assert not lsd_value or value.type == lsd_pb2.future.POINTER
-        if lsd_key:
-            self._write_lsd_key(lsd_pb2.write.SET, key, value, lsd_value)
-        else:
-            self._write(lsd_pb2.write.SET, key, value, lsd_value)
-        '''
 
-    '''def remove(self, key, lsd_api=False):'''
     def remove(self, key):
         self._write(api_pb2.write.DELETE, key, value='')
-        '''
-        assert key.type == lsd_pb2.future.POINTER if lsd_api else not isinstance(key, lsd_pb2.future)
-        if lsd_api:
-            self._write_lsd_key(lsd_pb2.write.DELETE, key, value='', lsd_value=True)
-        else:
-            self._write(lsd_pb2.write.DELETE, key, value='', lsd_api=False)
-        '''
 
-    '''def _write(self, write_type, key, value, lsd_api):'''
     def _write(self, write_type, key, value):
         # simplify code by assuming no more than one put for a specific key
         # per transaction
         if key in self._rwset_index:
             entry = self._rwset_index[key]
             if entry is None:
-                entry = self._transaction.rwset.add()
+                entry = self._transaction.wset.add(key=key)
                 self._rwset_index[key] = entry
-            entry.key = key
-            entry.type = api_pb2.rwset_entry.READ_WRITE
         else:
-            entry = self._transaction.rwset.add()
+            entry = self._transaction.wset.add(key=key)
             self._rwset_index[key] = entry
-            entry.key = key
-            entry.type = api_pb2.rwset_entry.WRITE
         entry.w.type = write_type
         entry.w.is_future = False
         entry.w.value = str(value)
-        '''
-        if key in self._rwset_index:
-            entry = self._rwset_index[key]
-            assert entry.type == entry.READ
-            entry.type = entry.READ_WRITE
-        else:
-            entry = self._transaction.rwset.add()
-            self._rwset_index[key] = entry
-            entry.type = entry.WRITE
-            entry.key = key
-        entry.w.type = write_type
-        entry.w.is_future = lsd_api
-        if lsd_api:
-            entry.w.future_index = value.index
-        else:
-            entry.w.value = str(value)
-        '''
-
-    '''
-    def _write_lsd_key(self, write_type, key_fptr, value, lsd_value):
-        assert key_fptr.type == lsd_pb2.future.POINTER
-        assert not lsd_value or (lsd_value and value.type == lsd_pb2.future.POINTER)
-        entry = self._transaction.fwset.add()
-        entry.func.keys.extend(self._keys(self._transaction.fset[key_fptr.index]))
-        entry.func.index = key_fptr.index
-        entry.w.type = write_type
-        entry.w.is_future = lsd_value
-        if lsd_value:
-            entry.w.future_index = value.index
-        else:
-            entry.w.value = str(value)
-    '''
-
-    '''
-    def add(self, left, right):
-        assert isinstance(left, lsd_pb2.future)
-        assert isinstance(right, int) or isinstance(right, float)
-        if isinstance(right, int):
-            return self._binary_op(lsd_pb2.future.ADD_FI, left, right)
-        else:
-            return self._binary_op(lsd_pb2.future.ADD_FD, left, right)
-    '''
-
-    '''
-    def sub(self, left, right):
-        assert isinstance(left, lsd_pb2.future)
-        assert isinstance(right, int) or isinstance(right, float)
-        if isinstance(right, int):
-            return self._binary_op(lsd_pb2.future.SUB_FI, left, right)
-        else:
-            return self._binary_op(lsd_pb2.future.SUB_FD, left, right)
-    '''
-
-    '''
-    def mul(self, left, right):
-        assert isinstance(left, lsd_pb2.future)
-        assert isinstance(right, float)
-        return self._binary_op(lsd_pb2.future.MUL_FD, left, right)
-    '''
-
-    '''
-    def gte(self, left, right):
-        assert isinstance(left, lsd_pb2.future)
-        assert isinstance(right, int)
-        return self._binary_op(lsd_pb2.future.GTEQ_FI, left, right)
-    '''
-
-    '''
-    def concat(self, left, right):
-        assert isinstance(left, lsd_pb2.future) or isinstance(right, lsd_pb2.future)
-        if isinstance(left, lsd_pb2.future):
-            assert isinstance(right, str)
-            return self._binary_op(lsd_pb2.future.CONCAT_FS, left, right)
-        else:
-            assert isinstance(left, str)
-            return self._binary_op(lsd_pb2.future.CONCAT_SF, left, right)
-    '''
-
-    '''
-    def trunc(self, left, right):
-        assert isinstance(left, lsd_pb2.future)
-        assert isinstance(right, int)
-        return self._binary_op(lsd_pb2.future.TRUNC_FI, left, right)
-    '''
-
-    '''
-    def substr(self, left, right):
-        assert isinstance(left, lsd_pb2.future)
-        assert isinstance(right, str)
-        return self._binary_op(lsd_pb2.future.SUBSTR_FS, left, right)
-    '''
-
-    '''
-    def _binary_op(self, op_type, left, right):
-        fop_index = len(self._transaction.fset)
-        fop = self._transaction.fset.add()
-        fop.type = op_type
-        fop.binary_op.resolved = False
-        if isinstance(left, lsd_pb2.future):
-            assert left.type == lsd_pb2.future.POINTER
-            fop.binary_op.left_param.index = left.index
-        else:
-            fop.binary_op.left_param.value = str(left)
-        if isinstance(right, lsd_pb2.future):
-            assert right.type == lsd_pb2.future.POINTER
-            fop.binary_op.right_param.index = right.index
-        else:
-            fop.binary_op.right_param.value = str(right)
-        fptr = lsd_pb2.future()
-        fptr.type = lsd_pb2.future.POINTER
-        fptr.index = fop_index
-        return fptr
-    '''
-
-    '''
-    def exists(self, f):
-        assert isinstance(f, lsd_pb2.future)
-        return self._unary_op(lsd_pb2.future.EXISTS, f)
-    '''
-
-    '''
-    def _unary_op(self, op_type, f):
-        assert f.type == lsd_pb2.future.POINTER
-        fop_index = len(self._transaction.fset)
-        fop = self._transaction.fset.add()
-        fop.type = op_type
-        fop.unary_op.resolved = False
-        fop.unary_op.param.index = f.index
-        fptr = lsd_pb2.future()
-        fptr.type = lsd_pb2.future.POINTER
-        fptr.index = fop_index
-        return fptr
-    '''
 
     def commit(self):
-        pb = self._transaction.SerializeToString()
-        committed = self._database.add(self._transaction.id, pb, expire=0, noreply=False)
-        if committed:
-            self._done()
-        else:
-            self._retry('commit')
-        '''
-        self._transaction.rwset.sort(key=lambda entry: entry.key)
         pb = self._transaction.SerializeToString()
         results = self._database.add(self._transaction.id, pb, expire=0, noreply=False)
         committed, _ = results['__lsd__committed']
         committed = committed == "1"
         if committed:
-            for key in results:
-                if key != '__lsd__committed':
-                    value, existed = results[key]
-                    entry = self._rwset_index[key]
-                    assert entry.r.is_future
-                    f = self._transaction.fset[entry.r.future_index]
-                    assert f.type == lsd_pb2.future.READ
-                    assert f.rdata.key == key
-                    f.rdata.resolved = True
-                    f.rdata.data.existed = existed == "1"
-                    f.rdata.data.value = value
-            self._previous_transaction = self._transaction
             self._done()
         else:
             self._retry('commit')
-        '''
 
     def abort(self):
+        result = self._database.decr(self._transaction.id, 1, noreply=False)
+        assert result is not None
         self._done()
 
     def _done(self):
+        self._is_retrying = False
         self._transaction_counter += 1
 
     def _retry(self, why):
+        self._is_retrying = True
         raise transaction_aborted(why)
-
-    '''
-    def get_value(self, fptr):
-        assert isinstance(fptr, lsd_pb2.future)
-        assert fptr.type == lsd_pb2.future.POINTER
-        f = self._previous_transaction.fset[fptr.index]
-        return self._future_ops[f.type](self, self._previous_transaction, f, transient=False, env={})
-    '''
 
 ## ==============================================
 ## LSDDriver
@@ -650,10 +209,10 @@ class LsdDriver(AbstractDriver):
                 w.tax = float(row[7])
                 key = self.__w_key(w_id, '')
                 w = w.SerializeToString()
-                self.client.set(key, w, noreply=False)
+                self.client._database.set(key, w, noreply=False)
                 w_ytd = row[8]
                 key = self.__w_key(w_id, 'ytd')
-                self.client.set(key, str(w_ytd), noreply=False)
+                self.client._database.set(key, str(w_ytd), noreply=False)
         elif tableName == constants.TABLENAME_DISTRICT:
             for row in tuples:
                 d_id = int(row[0])
@@ -669,13 +228,13 @@ class LsdDriver(AbstractDriver):
                 d.tax = float(row[8])
                 key = self.__d_key(d_id, d_w_id, '')
                 d = d.SerializeToString()
-                self.client.set(key, d, noreply=False)
+                self.client._database.set(key, d, noreply=False)
                 d_ytd = row[9]
                 key = self.__d_key(d_id, d_w_id, 'ytd')
-                self.client.set(key, str(d_ytd), noreply=False)
+                self.client._database.set(key, str(d_ytd), noreply=False)
                 d_next_o_id = int(row[10])
                 key = self.__d_key(d_id, d_w_id, 'next_o_id')
-                self.client.set(key, str(d_next_o_id), noreply=False)
+                self.client._database.set(key, str(d_next_o_id), noreply=False)
         elif tableName == constants.TABLENAME_CUSTOMER:
             index = {}
             for row in tuples:
@@ -702,22 +261,22 @@ class LsdDriver(AbstractDriver):
                 c.discount = float(row[15])
                 key = self.__c_key(c_id, c_d_id, c_w_id, '')
                 c = c.SerializeToString()
-                self.client.set(key, c, noreply=False)
+                self.client._database.set(key, c, noreply=False)
                 c_balance = row[16]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'balance')
-                self.client.set(key, str(c_balance), noreply=False)
+                self.client._database.set(key, str(c_balance), noreply=False)
                 c_ytd_payment = row[17]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'ytd_payment')
-                self.client.set(key, str(c_ytd_payment), noreply=False)
+                self.client._database.set(key, str(c_ytd_payment), noreply=False)
                 c_payment_cnt = row[18]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'payment_cnt')
-                self.client.set(key, str(c_payment_cnt), noreply=False)
+                self.client._database.set(key, str(c_payment_cnt), noreply=False)
                 c_delivery_cnt = row[19]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'delivery_cnt')
-                self.client.set(key, str(c_delivery_cnt), noreply=False)
+                self.client._database.set(key, str(c_delivery_cnt), noreply=False)
                 c_data = row[20]
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'data')
-                self.client.set(key, str(c_data), noreply=False)
+                self.client._database.set(key, str(c_data), noreply=False)
                 # index on (c_d_id, c_w_id, c_last) for payment
                 key = self.__c_index_key(c_d_id, c_w_id, c_last)
                 exists = (key in index)
@@ -727,14 +286,15 @@ class LsdDriver(AbstractDriver):
                     index[key] = [c_id]
             # update index
             for k, v in index.iteritems():
-                value = self.client.get(k)
-                exists = value is not None
+                reply = self.client._database.gets_many(['unused', 'notx', k])
+                exists = k in reply
+                value , _ = reply[k] if exists else (None, None)
                 l = tpcc_pb2.customer_index()
                 if exists:
-                    pb.Merge(value, l) # l.ParseFromString(value)
+                    l.ParseFromString(value)
                 l.c_id.extend(v)
                 l = l.SerializeToString()
-                self.client.set(k, l, noreply=False)
+                self.client._database.set(k, l, noreply=False)
         elif tableName == constants.TABLENAME_HISTORY:
             for row in tuples:
                 h_uuid = uuid.uuid1()
@@ -752,7 +312,7 @@ class LsdDriver(AbstractDriver):
                 h.data = str(row[7])
                 key = self.__h_key(h_uuid, h_c_id, h_c_w_id, h_w_id, '')
                 h = h.SerializeToString()
-                self.client.set(key, h, noreply=False)
+                self.client._database.set(key, h, noreply=False)
         elif tableName == constants.TABLENAME_NEW_ORDER:
             index = {}
             for row in tuples:
@@ -760,7 +320,7 @@ class LsdDriver(AbstractDriver):
                 no_d_id = row[1]
                 no_w_id = row[2]
                 key = self.__no_key(no_o_id, no_d_id, no_w_id, '')
-                self.client.set(key, str(no_o_id), noreply=False)
+                self.client._database.set(key, str(no_o_id), noreply=False)
                 # index on (no_d_id, no_w_id) for delivery
                 key = self.__no_index_key(no_d_id, no_w_id)
                 exists = key in index
@@ -768,10 +328,11 @@ class LsdDriver(AbstractDriver):
                     index[key] = no_o_id
             # update index
             for k, v in index.iteritems():
-                value = self.client.get(k)
-                exists = value is not None
+                reply = self.client._database.gets_many(['unused', 'notx', k])
+                exists = k in reply
+                value , _ = reply[k] if exists else (None, None)
                 if (not exists) or (v < int(value)):
-                    self.client.set(k, str(v), noreply=False)
+                    self.client._database.set(k, str(v), noreply=False)
         elif tableName == constants.TABLENAME_ORDERS:
             index = {}
             for row in tuples:
@@ -788,16 +349,16 @@ class LsdDriver(AbstractDriver):
                 o.all_local = bool(row[7])
                 key = self.__o_key(o_id, o_d_id, o_w_id, '')
                 o = o.SerializeToString()
-                self.client.set(key, o, noreply=False)
+                self.client._database.set(key, o, noreply=False)
                 o_carrier_id = row[5]
                 key = self.__o_key(o_id, o_d_id, o_w_id, 'carrier_id')
-                self.client.set(key, str(o_carrier_id), noreply=False)
+                self.client._database.set(key, str(o_carrier_id), noreply=False)
                 # index on (o_d_id, o_w_id, o_c_id) for order-status
                 key = self.__o_index_key(o_d_id, o_w_id, o_c_id)
                 index[key] = o_id
             # update index
             for k, v in index.iteritems():
-                self.client.set(k, str(v), noreply=False)
+                self.client._database.set(k, str(v), noreply=False)
         elif tableName == constants.TABLENAME_ORDER_LINE:
             for row in tuples:
                 ol_o_id = row[0]
@@ -813,10 +374,10 @@ class LsdDriver(AbstractDriver):
                 ol.dist_info = str(row[9])
                 key = self.__ol_key(ol_number, ol_o_id, ol_d_id, ol_w_id, '')
                 ol = ol.SerializeToString()
-                self.client.set(key, ol, noreply=False)
+                self.client._database.set(key, ol, noreply=False)
                 ol_delivery_d = row[6]
                 key = self.__ol_key(ol_number, ol_o_id, ol_d_id, ol_w_id, 'delivery_d')
-                self.client.set(key, str(ol_delivery_d), noreply=False)
+                self.client._database.set(key, str(ol_delivery_d), noreply=False)
         elif tableName == constants.TABLENAME_ITEM:
             for row in tuples:
                 i_id = row[0]
@@ -827,7 +388,7 @@ class LsdDriver(AbstractDriver):
                 i.data = str(row[4])
                 key = self.__i_key(i_id, '')
                 i = i.SerializeToString()
-                self.client.set(key, i, noreply=False)
+                self.client._database.set(key, i, noreply=False)
         elif tableName == constants.TABLENAME_STOCK:
             for row in tuples:
                 s_i_id = row[0]
@@ -846,19 +407,19 @@ class LsdDriver(AbstractDriver):
                 s.data = str(row[16])
                 key = self.__s_key(s_i_id, s_w_id, '')
                 s = s.SerializeToString()
-                self.client.set(key, s, noreply=False)
+                self.client._database.set(key, s, noreply=False)
                 s_quantity = row[2]
                 key = self.__s_key(s_i_id, s_w_id, 'quantity')
-                self.client.set(key, str(s_quantity), noreply=False)
+                self.client._database.set(key, str(s_quantity), noreply=False)
                 s_ytd = row[13]
                 key = self.__s_key(s_i_id, s_w_id, 'ytd')
-                self.client.set(key, str(s_ytd), noreply=False)
+                self.client._database.set(key, str(s_ytd), noreply=False)
                 s_order_cnt = row[14]
                 key = self.__s_key(s_i_id, s_w_id, 'order_cnt')
-                self.client.set(key, str(s_order_cnt), noreply=False)
+                self.client._database.set(key, str(s_order_cnt), noreply=False)
                 s_remote_cnt = row[15]
                 key = self.__s_key(s_i_id, s_w_id, 'remote_cnt')
-                self.client.set(key, str(s_remote_cnt), noreply=False)
+                self.client._database.set(key, str(s_remote_cnt), noreply=False)
         else:
             raise Exception('Unknown table: {}'.format(tableName))
 
@@ -875,12 +436,12 @@ class LsdDriver(AbstractDriver):
         Execute DELIVERY Transaction
         Parameters Dict:
             w_id
-            d_id
+            d_ids
             o_carrier_id
             ol_delivery_d
         """
         w_id = params['w_id']
-        d_id = params['d_id']
+        d_ids = params['d_ids']
         o_carrier_id = params['o_carrier_id']
         ol_delivery_d = params['ol_delivery_d']
         d_id = params['tid']
@@ -976,7 +537,7 @@ class LsdDriver(AbstractDriver):
             WHERE ol_o_id = :no_o_id AND ol_d_id = :d_id AND ol_w_id = :w_id;
             '''
             keys = []
-            for ol_number in range(1, o_ol_cnt + 1):
+            for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                 keys.append(ol_key)
             mg_res = self.client.multiget(keys)
@@ -985,7 +546,7 @@ class LsdDriver(AbstractDriver):
             mg_res = self.lsd.multiget(keys, lsd_api=False)
             '''
             ol_total = 0.0
-            for ol_number in range(1, o_ol_cnt + 1):
+            for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                 ol_delivery_d_key = self.__ol_key(ol_number, o_id, d_id, w_id, 'delivery_d')
                 exists, value = mg_res[ol_key]
@@ -1133,7 +694,7 @@ class LsdDriver(AbstractDriver):
                 exists, value = self.lsd.get(d_next_o_id_key, lsd_api=False, for_update=True)
                 d_next_o_id = int(value)
             '''
-            exists, value = self.lsd.get_notxn(d_key)
+            exists, value = self.client.get_notxn(d_key)
             assert exists
             d = tpcc_pb2.district()
             d.ParseFromString(value)
@@ -1229,7 +790,6 @@ class LsdDriver(AbstractDriver):
             '''
             sum_ol_amount = 0
             for j in range(o_ol_cnt):
-                ol_number = j + 1
                 ol_i_id = i_ids[j]
                 ol_supply_w_id = i_w_ids[j]
                 ol_quantity = i_qtys[j]
@@ -1480,8 +1040,10 @@ class LsdDriver(AbstractDriver):
                 INSERT INTO order_line ( ol_o_id, ol_d_id, ol_w_id, ol_number,  ol_i_id,  ol_supply_w_id,  ol_quantity,  ol_amount,  ol_dist_info)
                 VALUES                 (:o_id,   :d_id,   :w_id,   :ol_number, :ol_i_id, :ol_supply_w_id, :ol_quantity, :ol_amount, :ol_dist_info);
                 '''
+                ol_number = j
                 ol_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, '')
                 ol_delivery_d_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, 'delivery_d')
+                # XXX
                 '''
                 if self.use_lsd:
                     ol_key = self.__ol_key_f(ol_number, d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
@@ -1637,7 +1199,7 @@ class LsdDriver(AbstractDriver):
             WHERE ol_o_id = :o_id AND ol_d_id = :d_id AND ol_w_id = :w_id;
             '''
             keys = []
-            for ol_number in range(1, o_ol_cnt + 1):
+            for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                 ol_delivery_d_key = self.__ol_key(ol_number, o_id, d_id, w_id, 'delivery_d')
                 keys.append(ol_key)
@@ -1647,7 +1209,7 @@ class LsdDriver(AbstractDriver):
             '''
             mg_res = self.lsd.multiget(keys, lsd_api=self.use_lsd)
             '''
-            self.lsd.commit()
+            self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: w_id={} d_id={} c_id={} c_last={}'
             info = info.format(str(ex), w_id, d_id, c_id, c_last)
@@ -2005,7 +1567,7 @@ class LsdDriver(AbstractDriver):
                 else:
                     exists, value = self.lsd.get(d_next_o_id_key, lsd_api=False)
                 '''
-                self.lsd.commit()
+                self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting d_next_o_id)'
                 info = info.format(str(ex), w_id, d_id, threshold)
@@ -2056,7 +1618,7 @@ class LsdDriver(AbstractDriver):
                 # retrieve all order-line items (ol_i_id)
                 keys = []
                 for o_id, o_ol_cnt in ol_numbers.iteritems():
-                    for ol_number in range(1, o_ol_cnt + 1):
+                    for ol_number in range(o_ol_cnt):
                         ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                         keys.append(ol_key)
                 mg_res = self.client.multiget(keys)
@@ -2071,7 +1633,7 @@ class LsdDriver(AbstractDriver):
                 raise Exception(info)
             i_ids = []
             for o_id, o_ol_cnt in ol_numbers.iteritems():
-                for ol_number in range(1, o_ol_cnt + 1):
+                for ol_number in range(o_ol_cnt):
                     ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                     exists, value = mg_res[ol_key]
                     assert exists

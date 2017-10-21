@@ -1,0 +1,3 @@
+[submodule "pytpcc/pymemcache"]
+	path = pytpcc/pymemcache
+	url = https://github.com/pinterest/pymemcache.git
