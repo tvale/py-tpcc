@@ -47,11 +47,71 @@ class client:
         self._rwset_index = {}
         self._transaction = api_pb2.transaction()
         self._is_retrying = False
+        self._futures = set()
+        # install future operations
+        self._future_ops = [None] * api_pb2.future.TOTAL
+        def read_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.READ
+            # assert transient
+            # assert key in env
+            return env[f.key]
+        self._future_ops[api_pb2.future.READ] = read_op
+        def add_fi_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.ADD_FI
+            left_f = f.binary_op.left_future
+            left_result = self._future_ops[left_f.type](self, transaction, left_f, env)
+            right_result = f.binary_op.right_value
+            return int(left_result) + int(right_result)
+        self._future_ops[api_pb2.future.ADD_FI] = add_fi_op
+        def add_fd_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.ADD_FD
+            left_f = f.binary_op.left_future
+            left_result = self._future_ops[left_f.type](self, transaction, left_f, env)
+            right_result = f.binary_op.right_value
+            return float(left_result) + float(right_result)
+        self._future_ops[api_pb2.future.ADD_FD] = add_fd_op
+        def sub_fi_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.SUB_FI
+            left_f = f.binary_op.left_future
+            left_result = self._future_ops[left_f.type](self, transaction, left_f, env)
+            right_result = f.binary_op.right_value
+            return int(left_result) - int(right_result)
+        self._future_ops[api_pb2.future.SUB_FI] = sub_fi_op
+        def sub_fd_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.SUB_FD
+            left_f = f.binary_op.left_future
+            left_result = self._future_ops[left_f.type](self, transaction, left_f, env)
+            right_result = f.binary_op.right_value
+            return float(left_result) - float(right_result)
+        self._future_ops[api_pb2.future.SUB_FD] = sub_fd_op
+        def concat_fs_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.CONCAT_FS
+            left_f = f.binary_op.left_future
+            left_result = self._future_ops[left_f.type](self, transaction, left_f, env)
+            right_result = f.binary_op.right_value
+            return left_result + right_result
+        self._future_ops[api_pb2.future.CONCAT_FS] = concat_fs_op
+        def concat_sf_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.CONCAT_SF
+            left_result = f.binary_op.left_value
+            right_f = f.binary_op.right_future
+            right_result = self._future_ops[right_f.type](self, transaction, right_f, env)
+            return left_result + right_result
+        self._future_ops[api_pb2.future.CONCAT_SF] = concat_sf_op
+        def gteq_fi_op(self, transaction, f, env):
+            # assert f.type == api_pb2.future.GTEQ_FI
+            left_f = f.binary_op.left_future
+            left_result = self._future_ops[left_f.type](self, transaction, left_f, env)
+            right_result = f.binary_op.right_value
+            return int(left_result) >= int(right_result)
+        self._future_ops[api_pb2.future.GTEQ_FI] = gteq_fi_op
     
     def begin(self):
         self._rwset_index = {}
+        self._futures.clear()
         # - as separator because it's ASCII value is < than alphanum
         self._transaction.id = '{}-{}'.format(self._transaction_counter, self._id)
+        del self._transaction.frset[:]
         del self._transaction.wset[:]
         del self._transaction.fwset[:]
         del self._transaction.pset[:]
@@ -59,16 +119,21 @@ class client:
             result = self._database.incr(self._transaction.id, 1, noreply=False)
             assert result is not None
 
-    def get(self, key):
+    def get(self, key, lsd_api):
         # simplify code by assuming:
         # a. no more than one get for a specific key per transaction
         # b. no get for a specific key if put before
         assert key not in self._rwset_index
-        self._rwset_index[key] = None
-        reply = self._database.gets_many([self._transaction.id, 'tx', key])
-        exists = key in reply
-        value, _ = reply[key] if exists else (None, None)
-        return (exists, value)
+        if lsd_api:
+            self._rwset_index[key] = None
+            self._futures.add(key)
+            return api_pb2.future(type=api_pb2.future.READ, key=key)
+        else:
+            self._rwset_index[key] = None
+            reply = self._database.gets_many([self._transaction.id, 'tx', key])
+            exists = key in reply
+            value, _ = reply[key] if exists else (None, None)
+            return (exists, value)
 
     def get_notxn(self, key):
         reply = self._database.gets_many([self._transaction.id, 'notx', key])
@@ -77,18 +142,24 @@ class client:
         value, _ = reply[key]
         return (exists, value)
 
-    def multiget(self, klist):
+    def multiget(self, klist, lsd_api):
         # simplify code by assuming:
         # a. no more than one get for a specific key per transaction
         # b. no get for a specific key if put before
         assert not filter(lambda k: k in self._rwset_index, klist)
         result = {}
-        replies = self._database.gets_many([self._transaction.id, 'tx'] + klist)
-        for key in klist:
-            self._rwset_index[key] = None
-            exists = key in replies
-            value, _ = replies[key] if exists else (None, None)
-            result[key] = (exists, value)
+        if lsd_api:
+            self._futures.update(klist)
+            for key in klist:
+                self._rwset_index[key] = None
+                result[key] = api_pb2.future(type=api_pb2.future.READ, key=key)
+        else:
+            replies = self._database.gets_many([self._transaction.id, 'tx'] + klist)
+            for key in klist:
+                self._rwset_index[key] = None
+                exists = key in replies
+                value, _ = replies[key] if exists else (None, None)
+                result[key] = (exists, value)
         return result
 
     def multiget_notxn(self, klist):
@@ -100,13 +171,35 @@ class client:
             result[key] = (True, value)
         return result
 
-    def put(self, key, value):
-        self._write(api_pb2.write.SET, key, value)
+    def is_true(self, klist, f):
+        # assert len(klist) == 1
+        self._futures.difference_update(klist)
+        reply = self._database.get_many([self._transaction.id] + klist)
+        result = self._resolve(f, reply)
+        pred = self._transaction.pset.add(expected=result)
+        pred.func.CopyFrom(f)
+        return result
 
-    def remove(self, key):
-        self._write(api_pb2.write.DELETE, key, value='')
+    def _resolve(self, f, env):
+        return self._future_ops[f.type](self, self._transaction, f, env)
 
-    def _write(self, write_type, key, value):
+    def put(self, key, value, lsd_api, lsd_key=False, lsd_value=False):
+        # assert lsd_key or lsd_value if lsd_api else not lsd_key and not lsd_value
+        # assert not lsd_key or key.type == api_pb2.future.POINTER
+        # assert not lsd_value or value.type == api_pb2.future.POINTER
+        if lsd_key:
+            self._write_lsd_key(api_pb2.write.SET, key, value, lsd_api=lsd_value)
+        else:
+            self._write(api_pb2.write.SET, key, value, lsd_api=lsd_value)
+
+    def remove(self, key, lsd_api):
+        # assert key.type == api_pb2.future.POINTER if lsd_api else not isinstance(key, api_pb2.future)
+        if lsd_api:
+            self._write_lsd_key(api_pb2.write.DELETE, key, value='', lsd_api=False)
+        else:
+            self._write(api_pb2.write.DELETE, key, value='', lsd_api=False)
+
+    def _write(self, write_type, key, value, lsd_api):
         # simplify code by assuming no more than one put for a specific key
         # per transaction
         if key in self._rwset_index:
@@ -118,15 +211,76 @@ class client:
             entry = self._transaction.wset.add(key=key)
             self._rwset_index[key] = entry
         entry.w.type = write_type
-        entry.w.is_future = False
-        entry.w.value = str(value)
+        entry.w.is_future = lsd_api
+        if lsd_api:
+            entry.w.func.CopyFrom(value)
+        else:
+            entry.w.value = str(value)
+
+    def _write_lsd_key(self, write_type, key_f, value, lsd_api):
+        # assert key_f.type == api_pb2.future.POINTER
+        # assert not lsd_api or (lsd_api and value.type == api_pb2.future.POINTER)
+        fw_entry = self._transaction.fwset.add()
+        fw_entry.func.CopyFrom(key_f)
+        fw_entry.w.type = write_type
+        fw_entry.w.is_future = lsd_api
+        if lsd_api:
+            fw_entry.w.func.CopyFrom(value)
+        else:
+            fw_entry.w.value = str(value)
+
+    def add(self, left, right):
+        # assert isinstance(left, api_pb2.future)
+        # assert isinstance(right, int) or isinstance(right, float)
+        if isinstance(right, int):
+            f = api_pb2.future(type=api_pb2.future.ADD_FI)
+        else:
+            f = api_pb2.future(type=api_pb2.future.ADD_FD)
+        f.binary_op.left_future.CopyFrom(left)
+        f.binary_op.right_value = str(right)
+        return f
+
+    def sub(self, left, right):
+        # assert isinstance(left, api_pb2.future)
+        # assert isinstance(right, int) or isinstance(right, float)
+        if isinstance(right, int):
+            f = api_pb2.future(type=api_pb2.future.SUB_FI)
+        else:
+            f = api_pb2.future(type=api_pb2.future.SUB_FD)
+        f.binary_op.left_future.CopyFrom(left)
+        f.binary_op.right_value = str(right)
+        return f
+
+    def gte(self, left, right):
+        # assert isinstance(left, api_pb2.future)
+        # assert isinstance(right, int)
+        f = api_pb2.future(type=api_pb2.future.GTEQ_FI)
+        f.binary_op.left_future.CopyFrom(left)
+        f.binary_op.right_value = str(right)
+        return f
+
+    def concat(self, left, right):
+        # assert isinstance(left, api_pb2.future) or isinstance(right, api_pb2.future)
+        if isinstance(left, api_pb2.future):
+            # assert isinstance(right, str)
+            f = api_pb2.future(type=api_pb2.future.CONCAT_FS)
+            f.binary_op.left_future.CopyFrom(left)
+            f.binary_op.right_value = str(right)
+        else:
+            # assert isinstance(left, str)
+            f = api_pb2.future(type=api_pb2.future.CONCAT_SF)
+            f.binary_op.left_value = str(left)
+            f.binary_op.right_future.CopyFrom(right)
+        return f
 
     def commit(self):
+        self._transaction.frset.extend(self._futures)
         pb = self._transaction.SerializeToString()
         results = self._database.add(self._transaction.id, pb, expire=0, noreply=False)
         committed, _ = results['__lsd__committed']
         committed = committed == "1"
         if committed:
+            self._results = results
             self._done()
         else:
             self._retry('commit')
@@ -143,6 +297,13 @@ class client:
     def _retry(self, why):
         self._is_retrying = True
         raise transaction_aborted(why)
+
+    def get_value(self, key):
+        # assert isinstance(fptr, api_pb2.future)
+        # assert fptr.type == api_pb2.future.POINTER
+        exists = key in self._results
+        value, _ = self._results[key] if exists else (None, None)
+        return (exists, value)
 
 ## ==============================================
 ## LSDDriver
@@ -461,11 +622,11 @@ class LsdDriver(AbstractDriver):
             FETCH c_no INTO :no_o_id;
             '''
             no_index_key = self.__no_index_key(d_id, w_id)
-            _, value = self.client.get(no_index_key)
+            _, value = self.client.get(no_index_key, lsd_api=False)
             o_id = int(value)
             # check if new-order exists
             no_key = self.__no_key(o_id, d_id, w_id, '')
-            exists, _ = self.client.get(no_key)
+            exists, _ = self.client.get(no_key, lsd_api=False)
             if not exists:
                 self.client.abort()
                 return 1
@@ -474,9 +635,9 @@ class LsdDriver(AbstractDriver):
 
             DELETE FROM new_order WHERE CURRENT OF c_no;
             '''
-            self.client.remove(no_key)
+            self.client.remove(no_key, lsd_api=False)
             # update oldest new-order index
-            self.client.put(no_index_key, str(o_id + 1))
+            self.client.put(no_index_key, str(o_id + 1), lsd_api=False)
             '''
             retrieve order client id (o_c_id)
 
@@ -486,7 +647,7 @@ class LsdDriver(AbstractDriver):
             WHERE o_id = :no_o_id AND o_d_id = :d_id AND o_w_id = :w_id;
             '''
             o_key = self.__o_key(o_id, d_id, w_id, '')
-            exists, value = self.client.get(o_key)
+            exists, value = self.client.get(o_key, lsd_api=False)
             assert exists
             o = tpcc_pb2.order()
             o.ParseFromString(value)
@@ -500,7 +661,7 @@ class LsdDriver(AbstractDriver):
             WHERE o_id = :no_o_id AND o_d_id = :d_id AND o_w_id = :w_id;
             '''
             o_carrier_id_key = self.__o_key(o_id, d_id, w_id, 'carrier_id')
-            self.client.put(o_carrier_id_key, str(o_carrier_id))
+            self.client.put(o_carrier_id_key, str(o_carrier_id), lsd_api=False)
             '''
             retrieve sum all order-line amount (ol_amount) and
             update delivery dates (ol_delivery_d)
@@ -518,7 +679,7 @@ class LsdDriver(AbstractDriver):
             for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                 keys.append(ol_key)
-            mg_res = self.client.multiget(keys)
+            mg_res = self.client.multiget(keys, lsd_api=False)
             ol_total = 0.0
             for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
@@ -528,7 +689,7 @@ class LsdDriver(AbstractDriver):
                 ol = tpcc_pb2.order_line()
                 ol.ParseFromString(value)
                 ol_total += ol.amount
-                self.client.put(ol_delivery_d_key, str(ol_delivery_d))
+                self.client.put(ol_delivery_d_key, str(ol_delivery_d), lsd_api=False)
             '''
             increase customer balance (c_balance) by the sum of all order-line amounts (ol_amount), and increment delivery count (c_delivery_cnt)
 
@@ -542,17 +703,12 @@ class LsdDriver(AbstractDriver):
             '''
             c_balance_key = self.__c_key(c_id, d_id, w_id, 'balance')
             c_delivery_cnt_key = self.__c_key(c_id, d_id, w_id, 'delivery_cnt')
-            mg_res = self.client.multiget([c_balance_key, c_delivery_cnt_key])
-            exists, value = mg_res[c_balance_key]
-            assert exists
-            c_balance = float(value)
-            c_balance += ol_total
-            self.client.put(c_balance_key, str(c_balance))
-            exists, value = mg_res[c_delivery_cnt_key]
-            assert exists
-            c_delivery_cnt = int(value)
-            c_delivery_cnt += 1
-            self.client.put(c_delivery_cnt_key, str(c_delivery_cnt))
+            c_balance_f = self.client.get(c_balance_key, lsd_api=True)
+            c_balance_add_f = self.client.add(c_balance_f, ol_total)
+            self.client.put(c_balance_key, c_balance_add_f, lsd_api=True, lsd_value=True)
+            c_delivery_cnt_f = self.client.get(c_delivery_cnt_key, lsd_api=True)
+            c_delivery_cnt_add_f = self.client.add(c_delivery_cnt_f, 1)
+            self.client.put(c_delivery_cnt_key, c_delivery_cnt_add_f, lsd_api=True, lsd_value=True)
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: w_id={} d_id={}'
@@ -623,8 +779,7 @@ class LsdDriver(AbstractDriver):
             '''
             d_key = self.__d_key(d_id, w_id, '')
             d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
-            exists, value = self.client.get(d_next_o_id_key)
-            d_next_o_id = int(value)
+            d_next_o_id_f = self.client.get(d_next_o_id_key, lsd_api=True)
             exists, value = self.client.get_notxn(d_key)
             assert exists
             d = tpcc_pb2.district()
@@ -637,7 +792,8 @@ class LsdDriver(AbstractDriver):
             SET d_next_o_id = :d_next_o_id + 1
             WHERE d_id = :d_id AND d_w_id = :w_id;
             '''
-            self.client.put(d_next_o_id_key, str(d_next_o_id + 1))
+            d_next_o_id_add_f = self.client.add(d_next_o_id_f, 1)
+            self.client.put(d_next_o_id_key, d_next_o_id_add_f, lsd_api=True, lsd_value=True)
             '''
             insert order
 
@@ -646,8 +802,8 @@ class LsdDriver(AbstractDriver):
             '''
             o_ol_cnt = len(i_ids)
             o_all_local = len(set(i_w_ids)) == 1 and i_w_ids[0] == w_id
-            o_key = self.__o_key(d_next_o_id, d_id, w_id, '')
-            o_carrier_id_key = self.__o_key(d_next_o_id, d_id, w_id, 'carrier_id')
+            o_key = self.__o_key_f(d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
+            o_carrier_id_key = self.__o_key_f(d_next_o_id_f, d_next_o_id_key, d_id, w_id, 'carrier_id')
             o = tpcc_pb2.order()
             o.d_id = int(d_id)
             o.w_id = int(w_id)
@@ -656,22 +812,22 @@ class LsdDriver(AbstractDriver):
             o.ol_cnt = int(o_ol_cnt)
             o.all_local = bool(o_all_local)
             o = o.SerializeToString()
-            self.client.put(o_key, o)
-            self.client.put(o_carrier_id_key, str(constants.NULL_CARRIER_ID))
+            self.client.put(o_key, o, lsd_api=True, lsd_key=True)
+            self.client.put(o_carrier_id_key, str(constants.NULL_CARRIER_ID), lsd_api=True, lsd_key=True)
             '''
             update customer last order index
 
             '''
             o_index_key = self.__o_index_key(d_id, w_id, c_id)
-            self.client.put(o_index_key, str(d_next_o_id))
+            self.client.put(o_index_key, d_next_o_id_f, lsd_api=True, lsd_value=True)
             '''
             insert new-order
 
             INSERT INTO NEW_ORDER ( no_o_id, no_d_id, no_w_id)
             VALUES                (:o_id,   :d_id,   :w_id);
             '''
-            no_key = self.__no_key(d_next_o_id, d_id, w_id, '')
-            self.client.put(no_key, str(d_next_o_id))
+            no_key = self.__no_key_f(d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
+            self.client.put(no_key, d_next_o_id_f, lsd_api=True, lsd_key=True, lsd_value=True)
             '''
             insert order-lines
 
@@ -728,26 +884,16 @@ class LsdDriver(AbstractDriver):
                     dist_xx = 'dist_0{}'.format(str(d_id))
                 else:
                     dist_xx = 'dist_{}'.format(str(d_id))
-                keys = []
-                keys.append(s_quantity_key)
-                keys.append(s_ytd_key)
-                keys.append(s_order_cnt_key)
+                s_quantity_f = self.client.get(s_quantity_key, lsd_api=True)
+                s_ytd_f = self.client.get(s_ytd_key, lsd_api=True)
+                s_order_cnt_f = self.client.get(s_order_cnt_key, lsd_api=True)
                 if ol_is_remote:
-                    keys.append(s_remote_cnt_key)
-                mg_res = self.client.multiget(keys)
-                exists, value = mg_res[s_quantity_key]
-                s_quantity = int(value)
-                exists, value = mg_res[s_ytd_key]
-                s_ytd = int(value)
-                exists, value = mg_res[s_order_cnt_key]
-                s_order_cnt = int(value)
-                if ol_is_remote:
-                    exists, value = mg_res[s_remote_cnt_key]
-                    s_remote_cnt = int(value)
+                    s_remote_cnt_f = self.client.get(s_remote_cnt_key, lsd_api=True)
                 exists, value = self.client.get_notxn(s_key)
                 assert exists
                 s = tpcc_pb2.stock()
                 s.ParseFromString(value)
+                # TODO s_dist_xx and s_data need their own key
                 s_dist_xx = getattr(s, dist_xx)
                 s_data = s.data
                 '''
@@ -763,11 +909,14 @@ class LsdDriver(AbstractDriver):
                 '''
                 restock_qty = constants.MAX_QUANTITY - 9
                 restock_threshold = 10
-                if s_quantity >= ol_quantity + restock_threshold:
-                    s_quantity -= ol_quantity
+                s_quantity_gte_f = self.client.gte(s_quantity_f, ol_quantity + restock_threshold)
+                if self.client.is_true([s_quantity_key], s_quantity_gte_f):
+                    s_quantity_sub_f = self.client.sub(s_quantity_f, ol_quantity)
+                    self.client.put(s_quantity_key, s_quantity_sub_f, lsd_api=True, lsd_value=True)
                 else:
-                    s_quantity = (s_quantity - ol_quantity) + restock_qty
-                self.client.put(s_quantity_key, str(s_quantity))
+                    s_quantity_add_f = self.client.add(s_quantity_f, restock_qty - ol_quantity)
+                    self.client.put(s_quantity_key, s_quantity_add_f, lsd_api=True, lsd_value=True)
+                # if
                 '''
                 update stock year-to-date balance (s_ytd)
 
@@ -776,8 +925,8 @@ class LsdDriver(AbstractDriver):
                 SET s_ytd = :s_ytd
                 WHERE s_i_id = :ol_i_id AND s_w_id = :ol_supply_w_id;
                 '''
-                s_ytd += ol_quantity
-                self.client.put(s_ytd_key, str(s_ytd))
+                s_ytd_add_f = self.client.add(s_ytd_f, ol_quantity)
+                self.client.put(s_ytd_key, s_ytd_add_f, lsd_api=True, lsd_value=True)
                 '''
                 update stock number of local (s_order_cnt) and remote orders (s_remote_cnt)
 
@@ -789,11 +938,15 @@ class LsdDriver(AbstractDriver):
                     SET s_remote_cnt = :s_remote_cnt + 1
                     WHERE s_i_id = :ol_i_id AND s_w_id = :ol_supply_w_id;
                 '''
-                s_order_cnt += 1
-                self.client.put(s_order_cnt_key, str(s_order_cnt))
+                # s_order_cnt_add_f:
+                #           __ + __
+                #          /       \
+                # {s_order_cnt}     1
+                s_order_cnt_add_f = self.client.add(s_order_cnt_f, 1)
+                self.client.put(s_order_cnt_key, s_order_cnt_add_f, lsd_api=True, lsd_value=True)
                 if ol_is_remote:
-                    s_remote_cnt += 1
-                    self.client.put(s_remote_cnt_key, str(s_remote_cnt))
+                    s_remote_cnt_add_f = self.client.add(s_remote_cnt_f, 1)
+                    self.client.put(s_remote_cnt_key, s_remote_cnt_add_f, lsd_api=True, lsd_value=True)
                 '''
                 compute amount for the item in the order (ol_amount)
 
@@ -820,8 +973,8 @@ class LsdDriver(AbstractDriver):
                 VALUES                 (:o_id,   :d_id,   :w_id,   :ol_number, :ol_i_id, :ol_supply_w_id, :ol_quantity, :ol_amount, :ol_dist_info);
                 '''
                 ol_number = j
-                ol_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, '')
-                ol_delivery_d_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, 'delivery_d')
+                ol_key = self.__ol_key_f(ol_number, d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
+                ol_delivery_d_key = self.__ol_key_f(ol_number, d_next_o_id_f, d_next_o_id_key, d_id, w_id, 'delivery_d')
                 ol = tpcc_pb2.order_line()
                 ol.i_id = int(ol_i_id)
                 ol.supply_w_id = int(ol_supply_w_id)
@@ -829,8 +982,8 @@ class LsdDriver(AbstractDriver):
                 ol.amount = float(ol_amount)
                 ol.dist_info = str(s_dist_xx)
                 ol = ol.SerializeToString()
-                self.client.put(ol_key, ol)
-                self.client.put(ol_delivery_d_key, str(o_entry_d))
+                self.client.put(ol_key, ol, lsd_api=True, lsd_key=True)
+                self.client.put(ol_delivery_d_key, str(o_entry_d), lsd_api=True, lsd_key=True)
                 sum_ol_amount += ol_amount
             # for
             self.client.commit()
@@ -893,9 +1046,7 @@ class LsdDriver(AbstractDriver):
             WHERE c_id = :c_id AND c_d_id = :d_id AND c_w_id = :w_id;
             '''
             c_balance_key = self.__c_key(c_id, d_id, w_id, 'balance')
-            exists, value = self.client.get(c_balance_key)
-            assert exists
-            c_balance = float(value)
+            c_balance_f = self.client.get(c_balance_key, lsd_api=True)
             '''
             retrieve customer's last order id (o_id), entry date (o_entry_d), carrier (o_carrier_id), and item count (o_ol_cnt)
 
@@ -905,16 +1056,13 @@ class LsdDriver(AbstractDriver):
             ORDER BY o_id DESC;
             '''
             key = self.__o_index_key(d_id, w_id, c_id)
-            exists, value = self.client.get(key)
+            exists, value = self.client.get(key, lsd_api=False)
             assert exists
             o_id = int(value)
             o_key = self.__o_key(o_id, d_id, w_id, '')
             o_carrier_id_key = self.__o_key(o_id, d_id, w_id, 'carrier_id')
-            mg_res = self.client.multiget([o_key, o_carrier_id_key])
-            exists, value = mg_res[o_carrier_id_key]
-            assert exists
-            o_carrier_id = value
-            exists, value = mg_res[o_key]
+            o_carrier_id_f = self.client.get(o_carrier_id_key, lsd_api=True)
+            exists, value = self.client.get(o_key, lsd_api=False)
             assert exists
             o = tpcc_pb2.order()
             o.ParseFromString(value)
@@ -933,7 +1081,7 @@ class LsdDriver(AbstractDriver):
                 ol_delivery_d_key = self.__ol_key(ol_number, o_id, d_id, w_id, 'delivery_d')
                 keys.append(ol_key)
                 keys.append(ol_delivery_d_key)
-            mg_res = self.client.multiget(keys)
+            mg_res = self.client.multiget(keys, lsd_api=True)
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: w_id={} d_id={} c_id={} c_last={}'
@@ -980,9 +1128,7 @@ class LsdDriver(AbstractDriver):
             w = tpcc_pb2.warehouse()
             w.ParseFromString(value)
             w_name = w.name
-            exists, value = self.client.get(w_ytd_key)
-            assert exists
-            w_ytd = float(value)
+            w_ytd_f = self.client.get(w_ytd_key, lsd_api=True)
             '''
             increase warehouse year-to-date balance (w_ytd)
 
@@ -990,8 +1136,8 @@ class LsdDriver(AbstractDriver):
             SET w_ytd = w_ytd + :h_amount
             WHERE w_id = :w_id;
             '''
-            w_ytd += h_amount
-            self.client.put(w_ytd_key, str(w_ytd))
+            w_ytd_add_f = self.client.add(w_ytd_f, h_amount)
+            self.client.put(w_ytd_key, w_ytd_add_f, lsd_api=True, lsd_value=True)
             '''
             retrieve district name (d_name), street (d_street_1/2), city (d_city), state (d_state), zip code (d_zip), and year-to-date balance (d_ytd)
 
@@ -1007,9 +1153,7 @@ class LsdDriver(AbstractDriver):
             d = tpcc_pb2.district()
             d.ParseFromString(value)
             d_name = d.name
-            exists, value = self.client.get(d_ytd_key)
-            assert exists
-            d_ytd = float(value)
+            d_ytd_f = self.client.get(d_ytd_key, lsd_api=True)
             '''
             increase district year-to-date balance (d_ytd)
 
@@ -1017,8 +1161,8 @@ class LsdDriver(AbstractDriver):
             SET d_ytd = d_ytd + :h_amount
             WHERE d_w_id = :w_id AND d_id = :d_id;
             '''
-            d_ytd += h_amount
-            self.client.put(d_ytd_key, str(d_ytd))
+            d_ytd_add_f = self.client.add(d_ytd_f, h_amount)
+            self.client.put(d_ytd_key, d_ytd_add_f, lsd_api=True, lsd_value=True)
             '''
             retrieve customer id (c_id) if only given last name (c_last)
 
@@ -1071,13 +1215,9 @@ class LsdDriver(AbstractDriver):
             c_balance_key = self.__c_key(c_id, c_d_id, c_w_id, 'balance')
             c_ytd_payment_key = self.__c_key(c_id, c_d_id, c_w_id, 'ytd_payment')
             c_payment_cnt_key = self.__c_key(c_id, c_d_id, c_w_id, 'payment_cnt')
-            mg_res = self.client.multiget([c_balance_key, c_ytd_payment_key, c_payment_cnt_key])
-            exists, value = mg_res[c_balance_key]
-            c_balance = float(value)
-            exists, value = mg_res[c_ytd_payment_key]
-            c_ytd_payment = float(value)
-            exists, value = mg_res[c_payment_cnt_key]
-            c_payment_cnt = int(value)
+            c_balance_f = self.client.get(c_balance_key, lsd_api=True)
+            c_ytd_payment_f = self.client.get(c_ytd_payment_key, lsd_api=True)
+            c_payment_cnt_f = self.client.get(c_payment_cnt_key, lsd_api=True)
             '''
             decrease customer balance (c_balance)
 
@@ -1085,20 +1225,20 @@ class LsdDriver(AbstractDriver):
             SET c_balance = :c_balance - :h_amount
             WHERE c_w_id = :c_w_id AND c_d_id = :c_d_id AND c_id = :c_id;
             '''
-            c_balance -= h_amount
-            self.client.put(c_balance_key, str(c_balance))
+            c_balance_sub_f = self.client.sub(c_balance_f, h_amount)
+            self.client.put(c_balance_key, c_balance_sub_f, lsd_api=True, lsd_value=True)
             '''
             increase customer year-to-date payment (c_ytd_payment)
 
             '''
-            c_ytd_payment += h_amount
-            self.client.put(c_ytd_payment_key, str(c_ytd_payment))
+            c_ytd_payment_add_f = self.client.add(c_ytd_payment_f, h_amount)
+            self.client.put(c_ytd_payment_key, c_ytd_payment_add_f, lsd_api=True, lsd_value=True)
             '''
             increment customer payment number (c_payment_cnt)
 
             '''
-            c_payment_cnt += 1
-            self.client.put(c_payment_cnt_key, str(c_payment_cnt))
+            c_payment_cnt_add_f = self.client.add(c_payment_cnt_f, 1)
+            self.client.put(c_payment_cnt_key, c_payment_cnt_add_f, lsd_api=True, lsd_value=True)
             '''
             update customer data (c_data) if she has bad credit (c_credit = BC)
 
@@ -1106,12 +1246,12 @@ class LsdDriver(AbstractDriver):
             # TODO needs CONCAT binaryop and TRUNC unaryop
             if c_credit == constants.BAD_CREDIT:
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'data')
-                exists, value = self.client.get(key)
+                exists, value = self.client.get(key, lsd_api=False)
                 data = ' '.join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
                 c_data = (data + '|' + value)
                 if len(c_data) > constants.MAX_C_DATA:
                     c_data = c_data[:constants.MAX_C_DATA]
-                self.client.put(key, c_data)
+                self.client.put(key, c_data, lsd_api=False)
             '''
             insert history
 
@@ -1134,7 +1274,7 @@ class LsdDriver(AbstractDriver):
             h.data = str(h_data)
             h = h.SerializeToString()
             h_key = self.__h_key(h_uuid, c_id, c_w_id, w_id, '')
-            self.client.put(h_key, h)
+            self.client.put(h_key, h, lsd_api=False)
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: c_id={} c_last={} w_id={} c_w_id={} d_id={} c_d_id={}'
@@ -1166,13 +1306,13 @@ class LsdDriver(AbstractDriver):
                 WHERE d_w_id = :w_id AND d_id = :d_id;
                 '''
                 d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
-                exists, value = self.client.get(d_next_o_id_key)
+                d_next_o_id_f = self.client.get(d_next_o_id_key, lsd_api=True)
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting d_next_o_id)'
                 info = info.format(str(ex), w_id, d_id, threshold)
                 raise Exception(info)
-            d_next_o_id = int(value)
+            d_next_o_id = int(self.client.get_value(d_next_o_id_key)[1])
             params['d_next_o_id'] = d_next_o_id
         elif tid == 2:
             d_next_o_id = params['d_next_o_id']
@@ -1191,7 +1331,7 @@ class LsdDriver(AbstractDriver):
                     o_id = d_next_o_id - j
                     o_key = self.__o_key(o_id, d_id, w_id, '')
                     keys.append(o_key)
-                mg_res = self.client.multiget(keys)
+                mg_res = self.client.multiget(keys, lsd_api=False)
                 ol_numbers = {}
                 for j in range(1, 21):
                     o_id = d_next_o_id - j
@@ -1210,7 +1350,7 @@ class LsdDriver(AbstractDriver):
                     for ol_number in range(o_ol_cnt):
                         ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                         keys.append(ol_key)
-                mg_res = self.client.multiget(keys)
+                mg_res = self.client.multiget(keys, lsd_api=True)
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting s_i_id)'
@@ -1220,7 +1360,7 @@ class LsdDriver(AbstractDriver):
             for o_id, o_ol_cnt in ol_numbers.iteritems():
                 for ol_number in range(o_ol_cnt):
                     ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
-                    exists, value = mg_res[ol_key]
+                    exists, value = self.client.get_value(ol_key)
                     assert exists
                     ol = tpcc_pb2.order_line()
                     ol.ParseFromString(value)
@@ -1269,18 +1409,51 @@ class LsdDriver(AbstractDriver):
     def __no_key(self, no_o_id, no_d_id, no_w_id, field):
         k = 'no-{}_{}_{}-{}'
         return k.format(no_o_id, no_d_id, no_w_id, field)
+    def __no_key_f(self, no_o_id_f, no_o_id_key, no_d_id, no_w_id, field):
+        #         __ + __
+        #        /       \
+        #    __ + __    '_nodid_nowid-field'
+        #   /       \
+        # 'no-'    {nooid}
+        prefix = 'no-'
+        suffix = '_{}_{}-{}'.format(no_d_id, no_w_id, field)
+        prefix_concat_f = self.client.concat(prefix, no_o_id_f)
+        suffix_concat_f = self.client.concat(prefix_concat_f, suffix)
+        return suffix_concat_f
     def __no_index_key(self, no_d_id, no_w_id):
         k = 'noi-{}_{}'
         return k.format(no_d_id, no_w_id)
     def __o_key(self, o_id, o_d_id, o_w_id, field):
         k = 'o-{}_{}_{}-{}'
         return k.format(o_id, o_d_id, o_w_id, field)
+    def __o_key_f(self, o_id_f, o_id_key, o_d_id, o_w_id, field):
+        #         __ + __
+        #        /       \
+        #    __ + __    '_odid_owid-field'
+        #   /       \
+        # 'o-'    {oid}
+        prefix = 'o-'
+        suffix = '_{}_{}-{}'.format(o_d_id, o_w_id, field)
+        prefix_concat_f = self.client.concat(prefix, o_id_f)
+        suffix_concat_f = self.client.concat(prefix_concat_f, suffix)
+        return suffix_concat_f
     def __o_index_key(self, o_d_id, o_w_id, o_c_id):
         k = 'oi-{}_{}_{}'
         return k.format(o_d_id, o_w_id, o_c_id)
     def __ol_key(self, ol_number, ol_o_id, ol_d_id, ol_w_id, field):
         k = 'ol-{}_{}_{}_{}-{}'
         return k.format(ol_number, ol_o_id, ol_d_id, ol_w_id, field)
+    def __ol_key_f(self, ol_number, ol_o_id_f, ol_o_id_key, ol_d_id, ol_w_id, field):
+        #                   __ + __
+        #                  /       \
+        #              __ + __    '_oldid_olwid-field'
+        #             /       \
+        # 'ol-olnumber_'    {oloid}
+        prefix = 'ol-{}_'.format(ol_number)
+        suffix = '_{}_{}-{}'.format(ol_d_id, ol_w_id, field)
+        prefix_concat_f = self.client.concat(prefix, ol_o_id_f)
+        suffix_concat_f = self.client.concat(prefix_concat_f, suffix)
+        return suffix_concat_f
     def __i_key(self, i_id, field):
         k = 'i-{}-{}'
         return k.format(i_id, field)

@@ -1,5 +1,5 @@
 diff --git a/pytpcc/drivers/lsddriver.py b/pytpcc/drivers/lsddriver.py
-index ace5934..7c944d8 100644
+index 8737033..7e17e8c 100644
 --- a/pytpcc/drivers/lsddriver.py
 +++ b/pytpcc/drivers/lsddriver.py
 @@ -32,6 +32,7 @@ from pymemcache.client.base import Client as memcached
@@ -10,32 +10,37 @@ index ace5934..7c944d8 100644
  
  ## ==============================================
  ## "Client library"
-@@ -623,8 +624,11 @@ class LsdDriver(AbstractDriver):
+@@ -780,7 +781,10 @@ class LsdDriver(AbstractDriver):
              '''
              d_key = self.__d_key(d_id, w_id, '')
              d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
 +            __start__ = time.time()
-             exists, value = self.client.get(d_next_o_id_key)
-             d_next_o_id = int(value)
+             d_next_o_id_f = self.client.get(d_next_o_id_key, lsd_api=True)
 +            __end__ = time.time()
 +            logging.warn('LSDDriver::doNewOrder get={} (nanoseconds)'.format((__end__ - __start__) * 1000000000))
              exists, value = self.client.get_notxn(d_key)
              assert exists
              d = tpcc_pb2.district()
-@@ -763,10 +767,15 @@ class LsdDriver(AbstractDriver):
+@@ -910,13 +914,17 @@ class LsdDriver(AbstractDriver):
                  '''
                  restock_qty = constants.MAX_QUANTITY - 9
                  restock_threshold = 10
 +                __start_istrue__ = time.time()
-                 if s_quantity >= ol_quantity + restock_threshold:
+                 s_quantity_gte_f = self.client.gte(s_quantity_f, ol_quantity + restock_threshold)
+                 if self.client.is_true([s_quantity_key], s_quantity_gte_f):
+-                    s_quantity_sub_f = self.client.sub(s_quantity_f, ol_quantity)
+-                    self.client.put(s_quantity_key, s_quantity_sub_f, lsd_api=True, lsd_value=True)
 +                    __start_addsub__ = time.time()
-                     s_quantity -= ol_quantity
++                    new_s_quantity_f = self.client.sub(s_quantity_f, ol_quantity)
                  else:
+-                    s_quantity_add_f = self.client.add(s_quantity_f, restock_qty - ol_quantity)
+-                    self.client.put(s_quantity_key, s_quantity_add_f, lsd_api=True, lsd_value=True)
 +                    __start_addsub__ = time.time()
-                     s_quantity = (s_quantity - ol_quantity) + restock_qty
++                    new_s_quantity_f = self.client.add(s_quantity_f, restock_qty - ol_quantity)
 +                __end__ = time.time()
 +                logging.warn('LSDDriver::doNewOrder istrue={} add/sub={} (nanoseconds)'.format((__start_addsub__ - __start_istrue__) * 1000000000, (__end__ - __start_addsub__) * 1000000000))
-                 self.client.put(s_quantity_key, str(s_quantity))
++                self.client.put(s_quantity_key, new_s_quantity_f, lsd_api=True, lsd_value=True)
+                 # if
                  '''
                  update stock year-to-date balance (s_ytd)
 diff --git a/pytpcc/runtime/executor.py b/pytpcc/runtime/executor.py
