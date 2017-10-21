@@ -336,7 +336,7 @@ class LsdDriver(AbstractDriver):
         args.o_carrier_id = o_carrier_id
         args.ol_delivery_d = str(ol_delivery_d)
         args = args.SerializeToString()
-        self.client.add('tpcc.delivery', args, noreply=False)
+        self.client.replace('tpcc.delivery', args, noreply=False)
         return 1
 
     def doNewOrder(self, params):
@@ -372,7 +372,7 @@ class LsdDriver(AbstractDriver):
         args.i_w_ids.extend(i_w_ids)
         args.i_qtys.extend(i_qtys)
         args = args.SerializeToString()
-        self.client.add('tpcc.new_order', args, noreply=False)
+        self.client.replace('tpcc.new_order', args, noreply=False)
         return 1
 
     def doOrderStatus(self, params):
@@ -397,7 +397,7 @@ class LsdDriver(AbstractDriver):
         else:
             args.c_last = c_last
         args = args.SerializeToString()
-        self.client.add('tpcc.order_status', args, noreply=False)
+        self.client.replace('tpcc.order_status', args, noreply=False)
         return 1
 
     def doPayment(self, params):
@@ -434,7 +434,7 @@ class LsdDriver(AbstractDriver):
         else:
             args.c_last = c_last
         args = args.SerializeToString()
-        self.client.add('tpcc.payment', args, noreply=False)
+        self.client.replace('tpcc.payment', args, noreply=False)
         return 1
 
     def doStockLevel(self, params):
@@ -453,7 +453,7 @@ class LsdDriver(AbstractDriver):
         args.d_id = d_id
         args.threshold = threshold
         args = args.SerializeToString()
-        self.client.add('tpcc.stock_level', args, noreply=False)
+        self.client.replace('tpcc.stock_level', args, noreply=False)
         return 1
 
     def __w_key(self, w_id, field):
