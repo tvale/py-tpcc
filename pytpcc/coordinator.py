@@ -26,6 +26,7 @@
 # -----------------------------------------------------------------------
 
 import sys
+import subprocess
 import os
 import string
 import datetime
@@ -247,6 +248,12 @@ if __name__ == '__main__':
         it = hdr.get_recorded_iterator()
         for item in it:
             print ' {}:{}'.format(item.value_iterated_to, item.total_count_to_this_value),
+        print ''
+        echo = subprocess.Popen(['echo', '-e', 'stats\r'], stdout=subprocess.PIPE)
+        nc = subprocess.Popen(['nc', config['host'], config['port']], stdin=echo.stdout, stdout=subprocess.PIPE)
+        echo.stdout.close()
+        output = nc.communicate()[0]
+        print output
     ## IF
     
 ## MAIN
