@@ -1,5 +1,5 @@
 diff --git a/pytpcc/drivers/lsddriver.py b/pytpcc/drivers/lsddriver.py
-index 00e91d8..56024eb 100644
+index ace5934..7c944d8 100644
 --- a/pytpcc/drivers/lsddriver.py
 +++ b/pytpcc/drivers/lsddriver.py
 @@ -32,6 +32,7 @@ from pymemcache.client.base import Client as memcached
@@ -10,49 +10,34 @@ index 00e91d8..56024eb 100644
  
  ## ==============================================
  ## "Client library"
-@@ -684,8 +685,11 @@ class LsdDriver(AbstractDriver):
+@@ -623,8 +624,11 @@ class LsdDriver(AbstractDriver):
              '''
              d_key = self.__d_key(d_id, w_id, '')
              d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
-+            __start__ = time.clock()
++            __start__ = time.time()
              exists, value = self.client.get(d_next_o_id_key)
              d_next_o_id = int(value)
-+            __end__ = time.clock()
-+            logging.warn('LSDDriver::doNewOrder get_id={} (microseconds)'.format((__end__ - __start__) * 1000000))
-             # XXX
-             '''
-             if self.use_lsd:
-@@ -706,7 +710,11 @@ class LsdDriver(AbstractDriver):
-             SET d_next_o_id = :d_next_o_id + 1
-             WHERE d_id = :d_id AND d_w_id = :w_id;
-             '''
--            self.client.put(d_next_o_id_key, str(d_next_o_id + 1))
-+            __start__ = time.clock()
-+            new_d_next_o_id = str(d_next_o_id + 1)
-+            __end__ = time.clock()
-+            logging.warn('LSDDriver::doNewOrder increment_id={} (microseconds)'.format((__end__ - __start__) * 1000000))
-+            self.client.put(d_next_o_id_key, new_d_next_o_id)
-             # XXX
-             '''
-             if self.use_lsd:
-@@ -915,11 +923,16 @@ class LsdDriver(AbstractDriver):
++            __end__ = time.time()
++            logging.warn('LSDDriver::doNewOrder get={} (nanoseconds)'.format((__end__ - __start__) * 1000000000))
+             exists, value = self.client.get_notxn(d_key)
+             assert exists
+             d = tpcc_pb2.district()
+@@ -763,10 +767,15 @@ class LsdDriver(AbstractDriver):
                  '''
                  restock_qty = constants.MAX_QUANTITY - 9
                  restock_threshold = 10
-+                __start__ = time.clock()
++                __start_istrue__ = time.time()
                  if s_quantity >= ol_quantity + restock_threshold:
++                    __start_addsub__ = time.time()
                      s_quantity -= ol_quantity
                  else:
++                    __start_addsub__ = time.time()
                      s_quantity = (s_quantity - ol_quantity) + restock_qty
--                self.client.put(s_quantity_key, str(s_quantity))
-+                new_qty = str(s_quantity)
-+                __end__ = time.clock()
-+                logging.warn('LSDDriver::doNewOrder restock={} (microseconds)'.format((__end__ - __start__) * 1000000))
-+
-+                self.client.put(s_quantity_key, new_qty)
-                 # XXX
++                __end__ = time.time()
++                logging.warn('LSDDriver::doNewOrder istrue={} add/sub={} (nanoseconds)'.format((__start_addsub__ - __start_istrue__) * 1000000000, (__end__ - __start_addsub__) * 1000000000))
+                 self.client.put(s_quantity_key, str(s_quantity))
                  '''
-                 if self.use_lsd:
+                 update stock year-to-date balance (s_ytd)
 diff --git a/pytpcc/runtime/executor.py b/pytpcc/runtime/executor.py
 index fb44d5c..ca8386f 100644
 --- a/pytpcc/runtime/executor.py

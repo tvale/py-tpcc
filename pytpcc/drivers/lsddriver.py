@@ -1231,14 +1231,12 @@ class LsdDriver(AbstractDriver):
         elif tid == 3:
             i_ids = params['i_ids']
             try:
-                self.client.begin()
                 # retrieve the stock quantity (s_quantity) of each item
                 keys = []
                 for i_id in i_ids:
                     s_quantity_key = self.__s_key(i_id, w_id, 'quantity')
                     keys.append(s_quantity_key)
-                mg_res = self.client.multiget(keys)
-                self.client.commit()
+                mg_res = self.client.multiget_notxn(keys)
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting s_quantity)'
                 info = info.format(str(ex), w_id, d_id, threshold)
