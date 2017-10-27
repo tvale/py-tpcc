@@ -462,18 +462,10 @@ class LsdDriver(AbstractDriver):
             '''
             no_index_key = self.__no_index_key(d_id, w_id)
             _, value = self.client.get(no_index_key)
-            # XXX
-            '''
-            _, value = self.lsd.get(no_index_key, lsd_api=False, for_update=True)
-            '''
             o_id = int(value)
             # check if new-order exists
             no_key = self.__no_key(o_id, d_id, w_id, '')
             exists, _ = self.client.get(no_key)
-            # XXX
-            '''
-            exists, _ = self.lsd.get(no_key, lsd_api=False, for_update=True)
-            '''
             if not exists:
                 self.client.abort()
                 return 1
@@ -485,12 +477,6 @@ class LsdDriver(AbstractDriver):
             self.client.remove(no_key)
             # update oldest new-order index
             self.client.put(no_index_key, str(o_id + 1))
-            # XXX
-            '''
-            self.lsd.remove(no_key, lsd_api=False)
-            # update oldest new-order index
-            self.lsd.put(no_index_key, str(o_id + 1), lsd_api=False)
-            '''
             '''
             retrieve order client id (o_c_id)
 
@@ -501,10 +487,6 @@ class LsdDriver(AbstractDriver):
             '''
             o_key = self.__o_key(o_id, d_id, w_id, '')
             exists, value = self.client.get(o_key)
-            # XXX
-            '''
-            exists, value = self.lsd.get(o_key, lsd_api=False)
-            '''
             assert exists
             o = tpcc_pb2.order()
             o.ParseFromString(value)
@@ -519,10 +501,6 @@ class LsdDriver(AbstractDriver):
             '''
             o_carrier_id_key = self.__o_key(o_id, d_id, w_id, 'carrier_id')
             self.client.put(o_carrier_id_key, str(o_carrier_id))
-            # XXX
-            '''
-            self.lsd.put(o_carrier_id_key, str(o_carrier_id), lsd_api=False)
-            '''
             '''
             retrieve sum all order-line amount (ol_amount) and
             update delivery dates (ol_delivery_d)
@@ -541,10 +519,6 @@ class LsdDriver(AbstractDriver):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                 keys.append(ol_key)
             mg_res = self.client.multiget(keys)
-            # XXX
-            '''
-            mg_res = self.lsd.multiget(keys, lsd_api=False)
-            '''
             ol_total = 0.0
             for ol_number in range(o_ol_cnt):
                 ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
@@ -555,10 +529,6 @@ class LsdDriver(AbstractDriver):
                 ol.ParseFromString(value)
                 ol_total += ol.amount
                 self.client.put(ol_delivery_d_key, str(ol_delivery_d))
-                # XXX
-                '''
-                self.lsd.put(ol_delivery_d_key, str(ol_delivery_d), lsd_api=False)
-                '''
             '''
             increase customer balance (c_balance) by the sum of all order-line amounts (ol_amount), and increment delivery count (c_delivery_cnt)
 
@@ -583,37 +553,6 @@ class LsdDriver(AbstractDriver):
             c_delivery_cnt = int(value)
             c_delivery_cnt += 1
             self.client.put(c_delivery_cnt_key, str(c_delivery_cnt))
-            # XXX
-            '''
-            if self.use_lsd:
-                # c_balance_add_f:
-                #           __ + __
-                #          /       \
-                # {c_balance}    ol_amount_sum
-                c_balance_f = self.lsd.get(c_balance_key, lsd_api=True)
-                c_balance_add_f = self.lsd.add(c_balance_f, ol_total)
-                self.lsd.put(c_balance_key, c_balance_add_f, lsd_api=True, lsd_value=True)
-                # c_delivery_cnt_add:
-                #                __ + __
-                #               /       \
-                # {c_delivery_cnt}       1
-                c_delivery_cnt_f = self.lsd.get(c_delivery_cnt_key, lsd_api=True)
-                c_delivery_cnt_add_f = self.lsd.add(c_delivery_cnt_f, 1)
-                self.lsd.put(c_delivery_cnt_key, c_delivery_cnt_add_f, lsd_api=True, lsd_value=True)
-            else:
-                mg_res = self.lsd.multiget([c_balance_key, c_delivery_cnt_key], lsd_api=False, for_update=True)
-                exists, value = mg_res[c_balance_key]
-                assert exists
-                c_balance = float(value)
-                c_balance += ol_total
-                self.lsd.put(c_balance_key, str(c_balance), lsd_api=False)
-                exists, value = mg_res[c_delivery_cnt_key]
-                assert exists
-                c_delivery_cnt = int(value)
-                c_delivery_cnt += 1
-                self.lsd.put(c_delivery_cnt_key, str(c_delivery_cnt), lsd_api=False)
-            # if
-            '''
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: w_id={} d_id={}'
@@ -686,14 +625,6 @@ class LsdDriver(AbstractDriver):
             d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
             exists, value = self.client.get(d_next_o_id_key)
             d_next_o_id = int(value)
-            # XXX
-            '''
-            if self.use_lsd:
-                d_next_o_id_f = self.lsd.get(d_next_o_id_key, lsd_api=True)
-            else:
-                exists, value = self.lsd.get(d_next_o_id_key, lsd_api=False, for_update=True)
-                d_next_o_id = int(value)
-            '''
             exists, value = self.client.get_notxn(d_key)
             assert exists
             d = tpcc_pb2.district()
@@ -707,18 +638,6 @@ class LsdDriver(AbstractDriver):
             WHERE d_id = :d_id AND d_w_id = :w_id;
             '''
             self.client.put(d_next_o_id_key, str(d_next_o_id + 1))
-            # XXX
-            '''
-            if self.use_lsd:
-                # d_next_o_id_add_f:
-                #            __ + __
-                #           /       \
-                # {d_next_o_id}      1
-                d_next_o_id_add_f = self.lsd.add(d_next_o_id_f, 1)
-                self.lsd.put(d_next_o_id_key, d_next_o_id_add_f, lsd_api=True, lsd_value=True)
-            else:
-                self.lsd.put(d_next_o_id_key, str(d_next_o_id + 1), lsd_api=False)
-            '''
             '''
             insert order
 
@@ -729,16 +648,6 @@ class LsdDriver(AbstractDriver):
             o_all_local = len(set(i_w_ids)) == 1 and i_w_ids[0] == w_id
             o_key = self.__o_key(d_next_o_id, d_id, w_id, '')
             o_carrier_id_key = self.__o_key(d_next_o_id, d_id, w_id, 'carrier_id')
-            # XXX
-            '''
-            if self.use_lsd:
-                o_key = self.__o_key_f(d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
-                o_carrier_id_key = self.__o_key_f(d_next_o_id_f, d_next_o_id_key, d_id, w_id, 'carrier_id')
-            else:
-                o_key = self.__o_key(d_next_o_id, d_id, w_id, '')
-                o_carrier_id_key = self.__o_key(d_next_o_id, d_id, w_id, 'carrier_id')
-            # if
-            '''
             o = tpcc_pb2.order()
             o.d_id = int(d_id)
             o.w_id = int(w_id)
@@ -749,24 +658,12 @@ class LsdDriver(AbstractDriver):
             o = o.SerializeToString()
             self.client.put(o_key, o)
             self.client.put(o_carrier_id_key, str(constants.NULL_CARRIER_ID))
-            # XXX
-            '''
-            self.lsd.put(o_key, o, lsd_api=self.use_lsd, lsd_key=self.use_lsd)
-            self.lsd.put(o_carrier_id_key, str(constants.NULL_CARRIER_ID), lsd_api=self.use_lsd, lsd_key=self.use_lsd)
-            '''
             '''
             update customer last order index
 
             '''
             o_index_key = self.__o_index_key(d_id, w_id, c_id)
             self.client.put(o_index_key, str(d_next_o_id))
-            # XXX
-            '''
-            if self.use_lsd:
-                self.lsd.put(o_index_key, d_next_o_id_f, lsd_api=True, lsd_value=True)
-            else:
-                self.lsd.put(o_index_key, str(d_next_o_id), lsd_api=False)
-            '''
             '''
             insert new-order
 
@@ -775,15 +672,6 @@ class LsdDriver(AbstractDriver):
             '''
             no_key = self.__no_key(d_next_o_id, d_id, w_id, '')
             self.client.put(no_key, str(d_next_o_id))
-            # XXX
-            '''
-            if self.use_lsd:
-                no_key = self.__no_key_f(d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
-                self.lsd.put(no_key, d_next_o_id_f, lsd_api=True, lsd_key=True, lsd_value=True)
-            else:
-                no_key = self.__no_key(d_next_o_id, d_id, w_id, '')
-                self.lsd.put(no_key, str(d_next_o_id), lsd_api=False)
-            '''
             '''
             insert order-lines
 
@@ -862,46 +750,6 @@ class LsdDriver(AbstractDriver):
                 s.ParseFromString(value)
                 s_dist_xx = getattr(s, dist_xx)
                 s_data = s.data
-                # XXX
-                '''
-                if self.use_lsd:
-                    s_quantity_f = self.lsd.get(s_quantity_key, lsd_api=True)
-                    s_ytd_f = self.lsd.get(s_ytd_key, lsd_api=True)
-                    s_order_cnt_f = self.lsd.get(s_order_cnt_key, lsd_api=True )
-                    if ol_is_remote:
-                        s_remote_cnt_f = self.lsd.get(s_remote_cnt_key, lsd_api=True)
-                    exists, value = self.lsd.get_notxn(s_key)
-                    assert exists
-                    s = tpcc_pb2.stock()
-                    google.protobuf.text_format.Merge(value, s) # s.ParseFromString(value)
-                    # TODO s_dist_xx and s_data need their own key
-                    s_dist_xx = getattr(s, dist_xx)
-                    s_data = s.data
-                else:
-                    keys = []
-                    keys.append(s_quantity_key)
-                    keys.append(s_ytd_key)
-                    keys.append(s_order_cnt_key)
-                    if ol_is_remote:
-                        keys.append(s_remote_cnt_key)
-                    mg_res = self.lsd.multiget(keys, lsd_api=False, for_update=True)
-                    exists, value = mg_res[s_quantity_key]
-                    s_quantity = int(value)
-                    exists, value = mg_res[s_ytd_key]
-                    s_ytd = int(value)
-                    exists, value = mg_res[s_order_cnt_key]
-                    s_order_cnt = int(value)
-                    if ol_is_remote:
-                        exists, value = mg_res[s_remote_cnt_key]
-                        s_remote_cnt = int(value)
-                    exists, value = self.lsd.get_notxn(s_key)
-                    assert exists
-                    s = tpcc_pb2.stock()
-                    google.protobuf.text_format.Merge(value, s) # s.ParseFromString(value)
-                    s_dist_xx = getattr(s, dist_xx)
-                    s_data = s.data
-                # if
-                '''
                 '''
                 update stock quantity (s_quantity)
 
@@ -920,37 +768,6 @@ class LsdDriver(AbstractDriver):
                 else:
                     s_quantity = (s_quantity - ol_quantity) + restock_qty
                 self.client.put(s_quantity_key, str(s_quantity))
-                # XXX
-                '''
-                if self.use_lsd:
-                    # s_quantity_gte_f:
-                    #           __ >= __
-                    #          /        \
-                    # {s_quantity}    ol_qty + 10
-                    s_quantity_gte_f = self.lsd.gte(s_quantity_f, ol_quantity + restock_threshold)
-                    if self.lsd.is_true(s_quantity_gte_f):
-                        # s_quantity_sub_f:
-                        #            __ - __
-                        #           /       \
-                        # {s_quantity}    ol_qty
-                        s_quantity_sub_f = self.lsd.sub(s_quantity_f, ol_quantity)
-                        self.lsd.put(s_quantity_key, s_quantity_sub_f, lsd_api=True, lsd_value=True)
-                    else:
-                        # s_quantity_add_f:
-                        #            __ + __
-                        #           /       \
-                        # {s_quantity}    (91 - ol_qty)
-                        s_quantity_add_f = self.lsd.add(s_quantity_f, restock_qty - ol_quantity)
-                        self.lsd.put(s_quantity_key, s_quantity_add_f, lsd_api=True, lsd_value=True)
-                    # if
-                else:
-                    if s_quantity >= ol_quantity + restock_threshold:
-                        s_quantity -= ol_quantity
-                    else:
-                        s_quantity = (s_quantity - ol_quantity) + restock_qty
-                    self.lsd.put(s_quantity_key, str(s_quantity), lsd_api=False)
-                # if
-                '''
                 '''
                 update stock year-to-date balance (s_ytd)
 
@@ -961,20 +778,6 @@ class LsdDriver(AbstractDriver):
                 '''
                 s_ytd += ol_quantity
                 self.client.put(s_ytd_key, str(s_ytd))
-                # XXX
-                '''
-                if self.use_lsd:
-                    # s_ytd_add_f:
-                    #      __ + __
-                    #     /       \
-                    # {s_ytd}    ol_qty
-                    s_ytd_add_f = self.lsd.add(s_ytd_f, ol_quantity)
-                    self.lsd.put(s_ytd_key, s_ytd_add_f, lsd_api=True, lsd_value=True)
-                else:
-                    s_ytd += ol_quantity
-                    self.lsd.put(s_ytd_key, str(s_ytd), lsd_api=False)
-                # if
-                '''
                 '''
                 update stock number of local (s_order_cnt) and remote orders (s_remote_cnt)
 
@@ -991,30 +794,6 @@ class LsdDriver(AbstractDriver):
                 if ol_is_remote:
                     s_remote_cnt += 1
                     self.client.put(s_remote_cnt_key, str(s_remote_cnt))
-                # XXX
-                '''
-                if self.use_lsd:
-                    # s_order_cnt_add_f:
-                    #           __ + __
-                    #          /       \
-                    # {s_order_cnt}     1
-                    s_order_cnt_add_f = self.lsd.add(s_order_cnt_f, 1)
-                    self.lsd.put(s_order_cnt_key, s_order_cnt_add_f, lsd_api=True, lsd_value=True)
-                    if ol_is_remote:
-                        # s_remote_cnt_add_f:
-                        #            __ + __
-                        #           /       \
-                        # {s_remote_cnt}     1
-                        s_remote_cnt_add_f = self.lsd.add(s_remote_cnt_f, 1)
-                        self.lsd.put(s_remote_cnt_key, s_remote_cnt_add_f, lsd_api=True, lsd_value=True)
-                else:
-                    s_order_cnt += 1
-                    self.lsd.put(s_order_cnt_key, str(s_order_cnt), lsd_api=False)
-                    if ol_is_remote:
-                        s_remote_cnt += 1
-                        self.lsd.put(s_remote_cnt_key, str(s_remote_cnt), lsd_api=False)
-                # if
-                '''
                 '''
                 compute amount for the item in the order (ol_amount)
 
@@ -1043,16 +822,6 @@ class LsdDriver(AbstractDriver):
                 ol_number = j
                 ol_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, '')
                 ol_delivery_d_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, 'delivery_d')
-                # XXX
-                '''
-                if self.use_lsd:
-                    ol_key = self.__ol_key_f(ol_number, d_next_o_id_f, d_next_o_id_key, d_id, w_id, '')
-                    ol_delivery_d_key = self.__ol_key_f(ol_number, d_next_o_id_f, d_next_o_id_key, d_id, w_id, 'delivery_d')
-                else:
-                    ol_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, '')
-                    ol_delivery_d_key = self.__ol_key(ol_number, d_next_o_id, d_id, w_id, 'delivery_d')
-                # if
-                '''
                 ol = tpcc_pb2.order_line()
                 ol.i_id = int(ol_i_id)
                 ol.supply_w_id = int(ol_supply_w_id)
@@ -1062,11 +831,6 @@ class LsdDriver(AbstractDriver):
                 ol = ol.SerializeToString()
                 self.client.put(ol_key, ol)
                 self.client.put(ol_delivery_d_key, str(o_entry_d))
-                # XXX
-                '''
-                self.lsd.put(ol_key, ol, lsd_api=self.use_lsd, lsd_key=self.use_lsd)
-                self.lsd.put(ol_delivery_d_key, str(o_entry_d), lsd_api=self.use_lsd, lsd_key=self.use_lsd)
-                '''
                 sum_ol_amount += ol_amount
             # for
             self.client.commit()
@@ -1132,16 +896,6 @@ class LsdDriver(AbstractDriver):
             exists, value = self.client.get(c_balance_key)
             assert exists
             c_balance = float(value)
-            # XXX
-            '''
-            if self.use_lsd:
-                c_balance_f = self.lsd.get(c_balance_key, lsd_api=True)
-            else:
-                exists, value = self.lsd.get(c_balance_key, lsd_api=False)
-                assert exists
-                c_balance = float(value)
-            # if
-            '''
             '''
             retrieve customer's last order id (o_id), entry date (o_entry_d), carrier (o_carrier_id), and item count (o_ol_cnt)
 
@@ -1152,10 +906,6 @@ class LsdDriver(AbstractDriver):
             '''
             key = self.__o_index_key(d_id, w_id, c_id)
             exists, value = self.client.get(key)
-            # XXX
-            '''
-            exists, value = self.lsd.get(key, lsd_api=False)
-            '''
             assert exists
             o_id = int(value)
             o_key = self.__o_key(o_id, d_id, w_id, '')
@@ -1169,27 +919,6 @@ class LsdDriver(AbstractDriver):
             o = tpcc_pb2.order()
             o.ParseFromString(value)
             o_ol_cnt = o.ol_cnt
-            # XXX
-            '''
-            if self.use_lsd:
-                o_carrier_id_f = self.lsd.get(o_carrier_id_key, lsd_api=True)
-                exists, value = self.lsd.get(o_key, lsd_api=False)
-                assert exists
-                o = tpcc_pb2.order()
-                google.protobuf.text_format.Merge(value, o) # o.ParseFromString(value)
-                o_ol_cnt = o.ol_cnt
-            else:
-                mg_res = self.lsd.multiget([o_key, o_carrier_id_key], lsd_api=False)
-                exists, value = mg_res[o_carrier_id_key]
-                assert exists
-                o_carrier_id = value
-                exists, value = mg_res[o_key]
-                assert exists
-                o = tpcc_pb2.order()
-                google.protobuf.text_format.Merge(value, o) # o.ParseFromString(value)
-                o_ol_cnt = o.ol_cnt
-            # if
-            '''
             '''
             retrieve order-line item (ol_i_id), supply warehouse (ol_supply_w_id), amount (ol_amount), and delivery date (ol_delivery_d)
 
@@ -1205,10 +934,6 @@ class LsdDriver(AbstractDriver):
                 keys.append(ol_key)
                 keys.append(ol_delivery_d_key)
             mg_res = self.client.multiget(keys)
-            # XXX
-            '''
-            mg_res = self.lsd.multiget(keys, lsd_api=self.use_lsd)
-            '''
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: w_id={} d_id={} c_id={} c_last={}'
@@ -1258,16 +983,6 @@ class LsdDriver(AbstractDriver):
             exists, value = self.client.get(w_ytd_key)
             assert exists
             w_ytd = float(value)
-            # XXX
-            '''
-            if self.use_lsd:
-                w_ytd_f = self.lsd.get(w_ytd_key, lsd_api=True)
-            else:
-                exists, value = self.lsd.get(w_ytd_key, lsd_api=False, for_update=True)
-                assert exists
-                w_ytd = float(value)
-            # if
-            '''
             '''
             increase warehouse year-to-date balance (w_ytd)
 
@@ -1277,20 +992,6 @@ class LsdDriver(AbstractDriver):
             '''
             w_ytd += h_amount
             self.client.put(w_ytd_key, str(w_ytd))
-            # XXX
-            '''
-            if self.use_lsd:
-                # w_ytd_add_f:
-                #       __ + __
-                #      /       \
-                # {w_ytd}     h_amount
-                w_ytd_add_f = self.lsd.add(w_ytd_f, h_amount)
-                self.lsd.put(w_ytd_key, w_ytd_add_f, lsd_api=True, lsd_value=True)
-            else:
-                w_ytd += h_amount
-                self.lsd.put(w_ytd_key, str(w_ytd), lsd_api=False)
-            # if
-            '''
             '''
             retrieve district name (d_name), street (d_street_1/2), city (d_city), state (d_state), zip code (d_zip), and year-to-date balance (d_ytd)
 
@@ -1309,16 +1010,6 @@ class LsdDriver(AbstractDriver):
             exists, value = self.client.get(d_ytd_key)
             assert exists
             d_ytd = float(value)
-            # XXX
-            '''
-            if self.use_lsd:
-                d_ytd_f = self.lsd.get(d_ytd_key, lsd_api=True)
-            else:
-                exists, value = self.lsd.get(d_ytd_key, lsd_api=False, for_update=True)
-                assert exists
-                d_ytd = float(value)
-            # if
-            '''
             '''
             increase district year-to-date balance (d_ytd)
 
@@ -1328,20 +1019,6 @@ class LsdDriver(AbstractDriver):
             '''
             d_ytd += h_amount
             self.client.put(d_ytd_key, str(d_ytd))
-            # XXX
-            '''
-            if self.use_lsd:
-                # d_ytd_add_f:
-                #       __ + __
-                #      /       \
-                # {d_ytd}     h_amount
-                d_ytd_add_f = self.lsd.add(d_ytd_f, h_amount)
-                self.lsd.put(d_ytd_key, d_ytd_add_f, lsd_api=True, lsd_value=True)
-            else:
-                d_ytd += h_amount
-                self.lsd.put(d_ytd_key, str(d_ytd), lsd_api=False)
-            # if
-            '''
             '''
             retrieve customer id (c_id) if only given last name (c_last)
 
@@ -1401,22 +1078,6 @@ class LsdDriver(AbstractDriver):
             c_ytd_payment = float(value)
             exists, value = mg_res[c_payment_cnt_key]
             c_payment_cnt = int(value)
-            # XXX
-            '''
-            if self.use_lsd:
-                c_balance_f = self.lsd.get(c_balance_key, lsd_api=True)
-                c_ytd_payment_f = self.lsd.get(c_ytd_payment_key, lsd_api=True)
-                c_payment_cnt_f = self.lsd.get(c_payment_cnt_key, lsd_api=True)
-            else:
-                mg_res = self.lsd.multiget([c_balance_key, c_ytd_payment_key, c_payment_cnt_key], lsd_api=False, for_update=True)
-                exists, value = mg_res[c_balance_key]
-                c_balance = float(value)
-                exists, value = mg_res[c_ytd_payment_key]
-                c_ytd_payment = float(value)
-                exists, value = mg_res[c_payment_cnt_key]
-                c_payment_cnt = int(value)
-            # if
-            '''
             '''
             decrease customer balance (c_balance)
 
@@ -1426,60 +1087,18 @@ class LsdDriver(AbstractDriver):
             '''
             c_balance -= h_amount
             self.client.put(c_balance_key, str(c_balance))
-            # XXX
-            '''
-            if self.use_lsd:
-                # c_balance_sub_f:
-                #           __ - __
-                #          /       \
-                # {c_balance}     h_amount
-                c_balance_sub_f = self.lsd.sub(c_balance_f, h_amount)
-                self.lsd.put(c_balance_key, c_balance_sub_f, lsd_api=True, lsd_value=True)
-            else:
-                c_balance -= h_amount
-                self.lsd.put(c_balance_key, str(c_balance), lsd_api=False)
-            # if
-            '''
             '''
             increase customer year-to-date payment (c_ytd_payment)
 
             '''
             c_ytd_payment += h_amount
             self.client.put(c_ytd_payment_key, str(c_ytd_payment))
-            # XXX
-            '''
-            if self.use_lsd:
-                # c_ytd_payment_add_f:
-                #               __ + __
-                #              /       \
-                # {c_ytd_payment}     h_amount
-                c_ytd_payment_add_f = self.lsd.add(c_ytd_payment_f, h_amount)
-                self.lsd.put(c_ytd_payment_key, c_ytd_payment_add_f, lsd_api=True, lsd_value=True)
-            else:
-                c_ytd_payment += h_amount
-                self.lsd.put(c_ytd_payment_key, str(c_ytd_payment), lsd_api=False)
-            # if
-            '''
             '''
             increment customer payment number (c_payment_cnt)
 
             '''
             c_payment_cnt += 1
             self.client.put(c_payment_cnt_key, str(c_payment_cnt))
-            # XXX
-            '''
-            if self.use_lsd:
-                # c_payment_cnt_add_f:
-                #               __ + __
-                #              /       \
-                # {c_payment_cnt}       1
-                c_payment_cnt_add_f = self.lsd.add(c_payment_cnt_f, 1)
-                self.lsd.put(c_payment_cnt_key, c_payment_cnt_add_f, lsd_api=True, lsd_value=True)
-            else:
-                c_payment_cnt += 1
-                self.lsd.put(c_payment_cnt_key, str(c_payment_cnt), lsd_api=False)
-            # if
-            '''
             '''
             update customer data (c_data) if she has bad credit (c_credit = BC)
 
@@ -1488,19 +1107,11 @@ class LsdDriver(AbstractDriver):
             if c_credit == constants.BAD_CREDIT:
                 key = self.__c_key(c_id, c_d_id, c_w_id, 'data')
                 exists, value = self.client.get(key)
-                # XXX
-                '''
-                exists, value = self.lsd.get(key, lsd_api=False, for_update=True)
-                '''
                 data = ' '.join(map(str, [c_id, c_d_id, c_w_id, d_id, w_id, h_amount]))
                 c_data = (data + '|' + value)
                 if len(c_data) > constants.MAX_C_DATA:
                     c_data = c_data[:constants.MAX_C_DATA]
                 self.client.put(key, c_data)
-                # XXX
-                '''
-                self.lsd.put(key, c_data, lsd_api=False)
-                '''
             '''
             insert history
 
@@ -1524,10 +1135,6 @@ class LsdDriver(AbstractDriver):
             h = h.SerializeToString()
             h_key = self.__h_key(h_uuid, c_id, c_w_id, w_id, '')
             self.client.put(h_key, h)
-            # XXX
-            '''
-            self.lsd.put(h_key, h, lsd_api=False)
-            '''
             self.client.commit()
         except transaction_aborted as ex:
             info = 'txn: {} | tpcc: c_id={} c_last={} w_id={} c_w_id={} d_id={} c_d_id={}'
@@ -1560,26 +1167,12 @@ class LsdDriver(AbstractDriver):
                 '''
                 d_next_o_id_key = self.__d_key(d_id, w_id, 'next_o_id')
                 exists, value = self.client.get(d_next_o_id_key)
-                # XXX
-                '''
-                if self.use_lsd:
-                    d_next_o_id_f = self.lsd.get(d_next_o_id_key, lsd_api=True)
-                else:
-                    exists, value = self.lsd.get(d_next_o_id_key, lsd_api=False)
-                '''
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting d_next_o_id)'
                 info = info.format(str(ex), w_id, d_id, threshold)
                 raise Exception(info)
             d_next_o_id = int(value)
-            # XXX
-            '''
-            if self.use_lsd:
-                d_next_o_id = int(self.lsd.get_value(d_next_o_id_f))
-            else:
-                d_next_o_id = int(value)
-            '''
             params['d_next_o_id'] = d_next_o_id
         elif tid == 2:
             d_next_o_id = params['d_next_o_id']
@@ -1599,10 +1192,6 @@ class LsdDriver(AbstractDriver):
                     o_key = self.__o_key(o_id, d_id, w_id, '')
                     keys.append(o_key)
                 mg_res = self.client.multiget(keys)
-                # XXX
-                '''
-                mg_res = self.lsd.multiget(keys, lsd_api=False)
-                '''
                 ol_numbers = {}
                 for j in range(1, 21):
                     o_id = d_next_o_id - j
@@ -1622,10 +1211,6 @@ class LsdDriver(AbstractDriver):
                         ol_key = self.__ol_key(ol_number, o_id, d_id, w_id, '')
                         keys.append(ol_key)
                 mg_res = self.client.multiget(keys)
-                # XXX
-                '''
-                mg_res = self.lsd.multiget(keys, lsd_api=False)
-                '''
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting s_i_id)'
@@ -1653,10 +1238,6 @@ class LsdDriver(AbstractDriver):
                     s_quantity_key = self.__s_key(i_id, w_id, 'quantity')
                     keys.append(s_quantity_key)
                 mg_res = self.client.multiget(keys)
-                # XXX
-                '''
-                mg_res = self.lsd.multiget(keys, lsd_api=self.use_lsd)
-                '''
                 self.client.commit()
             except transaction_aborted as ex:
                 info = 'txn: {} | tpcc: w_id={} d_id={} threshold={} (getting s_quantity)'
@@ -1668,16 +1249,6 @@ class LsdDriver(AbstractDriver):
                 s_quantity_key = self.__s_key(i_id, w_id, 'quantity')
                 exists, value = mg_res[s_quantity_key]
                 s_quantity = int(value)
-                # XXX
-                '''
-                if self.use_lsd:
-                    s_quantity_f = mg_res[s_quantity_key]
-                    s_quantity = int(self.lsd.get_value(s_quantity_f))
-                else:
-                    exists, value = mg_res[s_quantity_key]
-                    s_quantity = int(value)
-                # if
-                '''
                 if s_quantity < threshold:
                     low_stock += 1
         return 1
